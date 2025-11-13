@@ -1,6 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { FertRow } from "./types";
 import { usePemupukanDerived } from "./derive";
 import type { TmTableRow } from "./derive";
@@ -11,20 +17,31 @@ type Ctx = {
   loading: boolean;
 
   // filters
-  distrik: string; setDistrik: (v: string) => void;
-  kebun: string; setKebun: (v: string) => void;
-  search: string; setSearch: (v: string) => void;
-  jenis: string; setJenis: (v: string) => void;
-  dateFrom: string; setDateFrom: (v: string) => void;
-  dateTo: string; setDateTo: (v: string) => void;
+  distrik: string;
+  setDistrik: (v: string) => void;
+  kebun: string;
+  setKebun: (v: string) => void;
+  search: string;
+  setSearch: (v: string) => void;
+  jenis: string;
+  setJenis: (v: string) => void;
+  dateFrom: string;
+  setDateFrom: (v: string) => void;
+  dateTo: string;
+  setDateTo: (v: string) => void;
   resetFilter: () => void;
 
   // ui
-  sidebarOpen: boolean; setSidebarOpen: (v: boolean) => void;
-  navRealOpen: boolean; setNavRealOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  navRencanaOpen: boolean; setNavRencanaOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  navStokOpen: boolean; setNavStokOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  filterOpen: boolean; setFilterOpen: (v: boolean) => void;
+  sidebarOpen: boolean;
+  setSidebarOpen: (v: boolean) => void;
+  navRealOpen: boolean;
+  setNavRealOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  navRencanaOpen: boolean;
+  setNavRencanaOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  navStokOpen: boolean;
+  setNavStokOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  filterOpen: boolean;
+  setFilterOpen: (v: boolean) => void;
 
   // options
   jenisOptions: string[];
@@ -33,26 +50,60 @@ type Ctx = {
 
   // derived
   filtered: FertRow[];
-  totalRencana: number; totalRealisasi: number;
-  tmRencana: number; tmRealisasi: number;
-  tbmRencana: number; tbmRealisasi: number;
-  bibRencana: number; bibRealisasi: number;
-  dtmRencana: number; dbrRencana: number;
-  dtmRealisasi: number; dbrRealisasi: number;
+  totalRencana: number;
+  totalRealisasi: number;
+  tmRencana: number;
+  tmRealisasi: number;
+  tbmRencana: number;
+  tbmRealisasi: number;
+  bibRencana: number;
+  bibRealisasi: number;
+  dtmRencana: number;
+  dbrRencana: number;
+  dtmRealisasi: number;
+  dbrRealisasi: number;
   bestKebun?: { kebun: string; rencana: number; progress: number };
 
   pieTotal: { name: string; value: number; labelText: string }[];
   pieTmTbm: { name: string; value: number; labelText: string }[];
-  barEfisiensiDistrik: { distrik: string; progress: number; rencana: number; realisasi: number }[];
-  barPerKebun: { kebun: string; rencana: number; realisasi: number; progress: number }[];
-  aggPupuk: {
-    jenis: string; rencana: number; realisasi: number;
-    rencana_ha: number; realisasi_ha: number; progress: number; share: number
+  barEfisiensiDistrik: {
+    distrik: string;
+    progress: number;
+    rencana: number;
+    realisasi: number;
   }[];
-  stokVsSisa: { distrik: string; stok: number; sisa: number; stok_pct: number; sisa_pct: number }[];
+  barPerKebun: {
+    kebun: string;
+    rencana: number;
+    realisasi: number;
+    progress: number;
+  }[];
+  aggPupuk: {
+    jenis: string;
+    rencana: number;
+    realisasi: number;
+    rencana_ha: number;
+    realisasi_ha: number;
+    progress: number;
+    share: number;
+  }[];
+  stokVsSisa: {
+    distrik: string;
+    stok: number;
+    sisa: number;
+    stok_pct: number;
+    sisa_pct: number;
+  }[];
 
-  // NEW: data tabel TM
+  // === TABEL TM/TBM/TM&TBM ===
   tmRows: TmTableRow[];
+  tbmRows: TmTableRow[];
+  tmTbmRows: TmTableRow[];
+
+  // === Informasi tanggal untuk header tabel TM/TBM ===
+  headerDates?: { today?: string; tomorrow?: string; selasa?: string; rabu?: string };
+  realWindow?: { start?: string; end?: string };
+  realCutoffDate?: string;
 };
 
 const PemupukanContext = createContext<Ctx | null>(null);
@@ -104,11 +155,18 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const derived = usePemupukanDerived(rows, {
-    distrik, kebun, search, jenis, dateFrom, dateTo,
+    distrik,
+    kebun,
+    search,
+    jenis,
+    dateFrom,
+    dateTo,
   });
 
   const resetFilter = () => {
@@ -125,20 +183,31 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     loading,
 
     // filters
-    distrik, setDistrik,
-    kebun, setKebun,
-    search, setSearch,
-    jenis, setJenis,
-    dateFrom, setDateFrom,
-    dateTo, setDateTo,
+    distrik,
+    setDistrik,
+    kebun,
+    setKebun,
+    search,
+    setSearch,
+    jenis,
+    setJenis,
+    dateFrom,
+    setDateFrom,
+    dateTo,
+    setDateTo,
     resetFilter,
 
     // ui
-    sidebarOpen, setSidebarOpen,
-    navRealOpen, setNavRealOpen,
-    navRencanaOpen, setNavRencanaOpen,
-    navStokOpen, setNavStokOpen,
-    filterOpen, setFilterOpen,
+    sidebarOpen,
+    setSidebarOpen,
+    navRealOpen,
+    setNavRealOpen,
+    navRencanaOpen,
+    setNavRencanaOpen,
+    navStokOpen,
+    setNavStokOpen,
+    filterOpen,
+    setFilterOpen,
 
     // options
     jenisOptions,
@@ -168,8 +237,15 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     aggPupuk: derived.aggPupuk,
     stokVsSisa: derived.stokVsSisa,
 
-    // NEW
+    // === tabel TM/TBM/TM&TBM ===
     tmRows: derived.tmRows,
+    tbmRows: derived.tbmRows,
+    tmTbmRows: derived.tmTbmRows,
+
+    // tanggal untuk header tabel
+    headerDates: derived.headerDates,
+    realWindow: derived.realWindow,
+    realCutoffDate: derived.realCutoffDate,
   };
 
   return (
@@ -181,6 +257,8 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
 
 export function usePemupukan() {
   const ctx = useContext(PemupukanContext);
-  if (!ctx) throw new Error("usePemupukan must be used within PemupukanProvider");
+  if (!ctx) {
+    throw new Error("usePemupukan must be used within PemupukanProvider");
+  }
   return ctx;
 }
