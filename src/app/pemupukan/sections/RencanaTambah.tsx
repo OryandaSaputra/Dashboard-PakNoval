@@ -159,7 +159,7 @@ export default function RencanaTambah() {
               <div className="grid grid-cols-12 gap-3">
                 {/* Baris 1 */}
                 <div className="col-span-12 md:col-span-4">
-                  <label className="text-[11px] text-slate-500 dark:text-slate-400">Kebun (Kode)</label>
+                  <label className="text-[11px] text-slate-500 dark:text-slate-400">Nama Kebun</label>
                   <Select value={form.kebun} onValueChange={(v) => onChange("kebun", v)}>
                     <SelectTrigger className="h-10 w-full">
                       <SelectValue placeholder="Pilih kebun" />

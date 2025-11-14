@@ -1,7 +1,7 @@
 import Image from "next/image";
 import React from "react";
 import {
-  Database, Calendar, TrendingUp, Factory, Package,
+  Database, Calendar,  Factory, 
   Filter as FilterIcon, ChevronDown, ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
@@ -9,15 +9,12 @@ import Link from "next/link";
 export default function Sidebar({
   navRealOpen, setNavRealOpen,
   navRencanaOpen, setNavRencanaOpen,
-  navStokOpen, setNavStokOpen,
   setFilterOpen,
 }: {
   navRealOpen: boolean;
   setNavRealOpen: React.Dispatch<React.SetStateAction<boolean>>;
   navRencanaOpen: boolean;
   setNavRencanaOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  navStokOpen: boolean;
-  setNavStokOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setFilterOpen: (v: boolean) => void;
   bestKebun?: { kebun: string; rencana: number; progress: number };
 }) {
@@ -74,27 +71,6 @@ export default function Sidebar({
             <Link href="/pemupukan/rencana/riwayat" className="block px-3 py-1.5 rounded-lg hover:bg-white/10">Tabel Rencana</Link>
           </div>
         )}
-
-        {/* Stok */}
-        <button
-          className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white/10 transition"
-          onClick={() => setNavStokOpen((s) => !s)}
-        >
-          <span className="flex items-center gap-2">
-            <Package className="h-4 w-4" /> Stok Pupuk
-          </span>
-          {navStokOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
-        {navStokOpen && (
-          <div className="pl-8 space-y-1">
-            <Link href="/pemupukan/stok/Tambah" className="block px-3 py-1.5 rounded-lg hover:bg-white/10">Tambah Stok</Link>
-            <Link href="/pemupukan/stok/Riwayat" className="block px-3 py-1.5 rounded-lg hover:bg-white/10">Tabel Stok</Link>
-          </div>
-        )}
-
-        <Link href="/pemupukan/komposisi" className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/10 transition">
-          <TrendingUp className="h-4 w-4" /> Tabel Realisasi/Jenis Pupuk
-        </Link>
 
         <button
           onClick={() => setFilterOpen(true)}

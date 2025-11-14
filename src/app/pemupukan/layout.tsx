@@ -13,12 +13,12 @@ import { KEBUN_LABEL } from "@/app/pemupukan/constants";
 
 function Frame({ children }: { children: React.ReactNode }) {
   const styleVars = createStyleVars();
+
   const {
     // ui
     sidebarOpen, setSidebarOpen,
     navRealOpen, setNavRealOpen,
     navRencanaOpen, setNavRencanaOpen,
-    navStokOpen, setNavStokOpen,
     filterOpen, setFilterOpen,
 
     // filters + setters
@@ -30,10 +30,8 @@ function Frame({ children }: { children: React.ReactNode }) {
     dateTo, setDateTo,
 
     // options & helpers
-    distrikOptions, kebunOptions, jenisOptions, resetFilter,
+    distrikOptions, kebunOptions, jenisOptions, resetFilter
 
-    // derived
-    bestKebun,
   } = usePemupukan();
 
   return (
@@ -41,16 +39,13 @@ function Frame({ children }: { children: React.ReactNode }) {
       className="min-h-screen flex bg-[--ptpn-cream] dark:bg-slate-950 text-slate-900 dark:text-slate-100"
       style={styleVars}
     >
-      {/* Props untuk mengontrol menu Realisasi/Rencana/Stok */}
+      {/* Props untuk mengontrol menu Realisasi/Rencana */}
       <Sidebar
         navRealOpen={navRealOpen}
         setNavRealOpen={setNavRealOpen}
         navRencanaOpen={navRencanaOpen}
         setNavRencanaOpen={setNavRencanaOpen}
-        navStokOpen={navStokOpen}
-        setNavStokOpen={setNavStokOpen}
         setFilterOpen={setFilterOpen}
-        bestKebun={bestKebun}
       />
 
       <MobileSidebar

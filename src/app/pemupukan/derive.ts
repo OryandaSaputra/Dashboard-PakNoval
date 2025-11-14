@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import {
   KEBUN_LABEL,
   ORDER_DTM,
@@ -372,164 +372,172 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
 
   type Mode = "TM" | "TBM" | "ALL";
 
-  const buildRows = (mode: Mode): TmTableRow[] => {
-    const by = new Map<string, Agg>();
-    const ensure = (k: string): Agg => {
-      const v = by.get(k);
-      if (v) return v;
-      const init: Agg = {
-        app1_rencana: 0,
-        app2_rencana: 0,
-        app3_rencana: 0,
-        app1_real: 0,
-        app2_real: 0,
-        app3_real: 0,
-        rencana_today: 0,
-        real_today: 0,
-        rencana_tomorrow: 0,
-        jumlah_rencana_total: 0,
-        real_last5_total: 0,
+  const buildRows = useCallback(
+    (mode: Mode): TmTableRow[] => {
+      const by = new Map<string, Agg>();
+      const ensure = (k: string): Agg => {
+        const v = by.get(k);
+        if (v) return v;
+        const init: Agg = {
+          app1_rencana: 0,
+          app2_rencana: 0,
+          app3_rencana: 0,
+          app1_real: 0,
+          app2_real: 0,
+          app3_real: 0,
+          rencana_today: 0,
+          real_today: 0,
+          rencana_tomorrow: 0,
+          jumlah_rencana_total: 0,
+          real_last5_total: 0,
+        };
+        by.set(k, init);
+        return init;
       };
-      by.set(k, init);
-      return init;
-    };
 
-    for (const r of filtered) {
-      const g = ensure(r.kebun);
+      for (const r of filtered) {
+        const g = ensure(r.kebun);
 
-      // pilih basis sesuai mode
-      let renBase = 0;
-      let realBase = 0;
-      if (mode === "TM") {
-        renBase = r.tm_rencana ?? 0;
-        realBase = r.tm_realisasi ?? 0;
-      } else if (mode === "TBM") {
-        renBase = r.tbm_rencana ?? 0;
-        realBase = r.tbm_realisasi ?? 0;
-      } else {
-        // ALL = TM + TBM / total
-        renBase =
-          r.rencana_total ?? (r.tm_rencana ?? 0) + (r.tbm_rencana ?? 0);
-        realBase =
-          r.realisasi_total ?? (r.tm_realisasi ?? 0) + (r.tbm_realisasi ?? 0);
-      }
+        // pilih basis sesuai mode
+        let renBase = 0;
+        let realBase = 0;
+        if (mode === "TM") {
+          renBase = r.tm_rencana ?? 0;
+          realBase = r.tm_realisasi ?? 0;
+        } else if (mode === "TBM") {
+          renBase = r.tbm_rencana ?? 0;
+          realBase = r.tbm_realisasi ?? 0;
+        } else {
+          // ALL = TM + TBM / total
+          renBase =
+            r.rencana_total ?? (r.tm_rencana ?? 0) + (r.tbm_rencana ?? 0);
+          realBase =
+            r.realisasi_total ??
+            (r.tm_realisasi ?? 0) + (r.tbm_realisasi ?? 0);
+        }
 
-      g.jumlah_rencana_total += renBase;
+        g.jumlah_rencana_total += renBase;
 
-      // window 5 hari terakhir
-      if (r.tanggal && r.tanggal >= last5StartISO && r.tanggal <= last5EndISO) {
-        g.real_last5_total += realBase;
+        // window 5 hari terakhir
+        if (
+          r.tanggal &&
+          r.tanggal >= last5StartISO &&
+          r.tanggal <= last5EndISO
+        ) {
+          g.real_last5_total += realBase;
 
+          const a = r as unknown as Apps;
+          g.app1_real += a.real_app1 ?? 0;
+          g.app2_real += a.real_app2 ?? 0;
+          g.app3_real += a.real_app3 ?? 0;
+        }
+
+        // Harian: gunakan basis sesuai mode (supaya TM/TBM terpisah)
+        if (r.tanggal === todayISO) {
+          g.rencana_today += renBase;
+          g.real_today += realBase;
+        }
+        if (r.tanggal === tomorrowISO) {
+          g.rencana_tomorrow += renBase;
+        }
+
+        // Rencana per-aplikasi (kalau ada fieldnya)
         const a = r as unknown as Apps;
-        g.app1_real += a.real_app1 ?? 0;
-        g.app2_real += a.real_app2 ?? 0;
-        g.app3_real += a.real_app3 ?? 0;
+        g.app1_rencana += a.rencana_app1 ?? 0;
+        g.app2_rencana += a.rencana_app2 ?? 0;
+        g.app3_rencana += a.rencana_app3 ?? 0;
       }
 
-      // Harian: gunakan basis sesuai mode (supaya TM/TBM terpisah)
-      if (r.tanggal === todayISO) {
-        g.rencana_today += renBase;
-        g.real_today += realBase;
+      // fallback distribusi 3 aplikasi bila tidak tersedia field per-aplikasi
+      const split3 = (total: number) => {
+        const raw = [0.4 * total, 0.35 * total, 0.25 * total];
+        const a1 = Math.round(raw[0]);
+        const a2 = Math.round(raw[1]);
+        const a3 = Math.max(0, Math.round(total - a1 - a2));
+        return [a1, a2, a3] as const;
+      };
+
+      for (const [, g] of by) {
+        const hasRenApps =
+          g.app1_rencana + g.app2_rencana + g.app3_rencana > 0;
+        const hasRealApps = g.app1_real + g.app2_real + g.app3_real > 0;
+
+        if (!hasRenApps && g.jumlah_rencana_total > 0) {
+          const [a1, a2, a3] = split3(g.jumlah_rencana_total);
+          g.app1_rencana = a1;
+          g.app2_rencana = a2;
+          g.app3_rencana = a3;
+        }
+        if (!hasRealApps && g.real_last5_total > 0) {
+          const [a1, a2, a3] = split3(g.real_last5_total);
+          g.app1_real = a1;
+          g.app2_real = a2;
+          g.app3_real = a3;
+        }
       }
-      if (r.tanggal === tomorrowISO) {
-        g.rencana_tomorrow += renBase;
-      }
 
-      // Rencana per-aplikasi (kalau ada fieldnya)
-      const a = r as unknown as Apps;
-      g.app1_rencana += a.rencana_app1 ?? 0;
-      g.app2_rencana += a.rencana_app2 ?? 0;
-      g.app3_rencana += a.rencana_app3 ?? 0;
-    }
+      const pct = (real: number, ren: number) =>
+        ren > 0 ? (real / ren) * 100 : 0;
 
-    // fallback distribusi 3 aplikasi bila tidak tersedia field per-aplikasi
-    const split3 = (total: number) => {
-      const raw = [0.4 * total, 0.35 * total, 0.25 * total];
-      const a1 = Math.round(raw[0]);
-      const a2 = Math.round(raw[1]);
-      const a3 = Math.max(0, Math.round(total - a1 - a2));
-      return [a1, a2, a3] as const;
-    };
+      // urutan kebun: DTM lalu DBR
+      const orderMap = new Map<string, number>();
+      ORDER_DTM.forEach((k, i) => orderMap.set(k, i));
+      const baseIndex = ORDER_DTM.length;
+      ORDER_DBR.forEach((k, i) => orderMap.set(k, baseIndex + i));
 
-    for (const [, g] of by) {
-      const hasRenApps =
-        g.app1_rencana + g.app2_rencana + g.app3_rencana > 0;
-      const hasRealApps = g.app1_real + g.app2_real + g.app3_real > 0;
+      const keys = Array.from(by.keys()).sort((a, b) => {
+        const ia = orderMap.get(a);
+        const ib = orderMap.get(b);
+        if (ia != null && ib != null) return ia - ib;
+        const la = KEBUN_LABEL[a] ?? a;
+        const lb = KEBUN_LABEL[b] ?? b;
+        return la.localeCompare(lb);
+      });
 
-      if (!hasRenApps && g.jumlah_rencana_total > 0) {
-        const [a1, a2, a3] = split3(g.jumlah_rencana_total);
-        g.app1_rencana = a1;
-        g.app2_rencana = a2;
-        g.app3_rencana = a3;
-      }
-      if (!hasRealApps && g.real_last5_total > 0) {
-        const [a1, a2, a3] = split3(g.real_last5_total);
-        g.app1_real = a1;
-        g.app2_real = a2;
-        g.app3_real = a3;
-      }
-    }
+      return keys.map((k, i) => {
+        const g = by.get(k)!;
+        return {
+          no: i + 1,
+          kebun: KEBUN_LABEL[k] ?? k,
 
-    const pct = (real: number, ren: number) =>
-      ren > 0 ? (real / ren) * 100 : 0;
+          app1_rencana: g.app1_rencana,
+          app1_real: g.app1_real,
+          app1_pct: pct(g.app1_real, g.app1_rencana),
 
-    // urutan kebun: DTM lalu DBR
-    const orderMap = new Map<string, number>();
-    ORDER_DTM.forEach((k, i) => orderMap.set(k, i));
-    const baseIndex = ORDER_DTM.length;
-    ORDER_DBR.forEach((k, i) => orderMap.set(k, baseIndex + i));
+          app2_rencana: g.app2_rencana,
+          app2_real: g.app2_real,
+          app2_pct: pct(g.app2_real, g.app2_rencana),
 
-    const keys = Array.from(by.keys()).sort((a, b) => {
-      const ia = orderMap.get(a);
-      const ib = orderMap.get(b);
-      if (ia != null && ib != null) return ia - ib;
-      const la = KEBUN_LABEL[a] ?? a;
-      const lb = KEBUN_LABEL[b] ?? b;
-      return la.localeCompare(lb);
-    });
+          app3_rencana: g.app3_rencana,
+          app3_real: g.app3_real,
+          app3_pct: pct(g.app3_real, g.app3_rencana),
 
-    return keys.map((k, i) => {
-      const g = by.get(k)!;
-      return {
-        no: i + 1,
-        kebun: KEBUN_LABEL[k] ?? k,
+          // Harian
+          renc_selasa: g.rencana_today,
+          real_selasa: g.real_today,
+          renc_rabu: g.rencana_tomorrow,
 
-        app1_rencana: g.app1_rencana,
-        app1_real: g.app1_real,
-        app1_pct: pct(g.app1_real, g.app1_rencana),
-
-        app2_rencana: g.app2_rencana,
-        app2_real: g.app2_real,
-        app2_pct: pct(g.app2_real, g.app2_rencana),
-
-        app3_rencana: g.app3_rencana,
-        app3_real: g.app3_real,
-        app3_pct: pct(g.app3_real, g.app3_rencana),
-
-        // Harian
-        renc_selasa: g.rencana_today,
-        real_selasa: g.real_today,
-        renc_rabu: g.rencana_tomorrow,
-
-        // Jumlah
-        jumlah_rencana2025: g.jumlah_rencana_total,
-        jumlah_realSd0710: g.real_last5_total,
-        jumlah_pct: pct(g.real_last5_total, g.jumlah_rencana_total),
-      } as TmTableRow;
-    });
-  };
+          // Jumlah
+          jumlah_rencana2025: g.jumlah_rencana_total,
+          jumlah_realSd0710: g.real_last5_total,
+          jumlah_pct: pct(g.real_last5_total, g.jumlah_rencana_total),
+        } as TmTableRow;
+      });
+    },
+    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+  );
 
   const tmRows = useMemo(
     () => buildRows("TM"),
-    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+    [buildRows]
   );
   const tbmRows = useMemo(
     () => buildRows("TBM"),
-    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+    [buildRows]
   );
   const tmTbmRows = useMemo(
     () => buildRows("ALL"),
-    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+    [buildRows]
   );
 
   return {
