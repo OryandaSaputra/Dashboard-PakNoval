@@ -1,5 +1,5 @@
 import SectionHeader from "../components/SectionHeader";
-import ScopeCard from "../components/ScopeCard";
+// import ScopeCard from "../components/ScopeCard"; // sudah tidak dipakai
 import { Card, CardContent } from "@/components/ui/card";
 import StatLine from "../components/StatLine";
 import {
@@ -8,7 +8,7 @@ import {
   TrendingDown,
   CheckCircle2,
   AlertTriangle,
-  type LucideIcon, // <-- penting: tipe ikon
+  type LucideIcon,
 } from "lucide-react";
 
 export default function Ikhtisar({
@@ -19,12 +19,18 @@ export default function Ikhtisar({
   tanggalBesok,
 }: {
   totals: {
-    totalRencana: number; totalRealisasi: number;
-    tmRencana: number; tmRealisasi: number;
-    tbmRencana: number; tbmRealisasi: number;
-    bibRencana: number; bibRealisasi: number;
-    dtmRencana: number; dbrRencana: number;
-    dtmRealisasi: number; dbrRealisasi: number;
+    totalRencana: number;
+    totalRealisasi: number;
+    tmRencana: number;
+    tmRealisasi: number;
+    tbmRencana: number;
+    tbmRealisasi: number;
+    bibRencana: number;
+    bibRealisasi: number;
+    dtmRencana: number;
+    dbrRencana: number;
+    dtmRealisasi: number;
+    dbrRealisasi: number;
   };
   realisasiHarian?: number;
   rencanaBesok?: number;
@@ -32,12 +38,18 @@ export default function Ikhtisar({
   tanggalBesok?: string;
 }) {
   const {
-    totalRencana, totalRealisasi,
-    tmRencana, tmRealisasi,
-    tbmRencana, tbmRealisasi,
-    bibRencana, bibRealisasi,
-    dtmRencana, dbrRencana,
-    dtmRealisasi, dbrRealisasi,
+    totalRencana,
+    totalRealisasi,
+    tmRencana,
+    tmRealisasi,
+    tbmRencana,
+    tbmRealisasi,
+    bibRencana,
+    bibRealisasi,
+    dtmRencana,
+    dbrRencana,
+    dtmRealisasi,
+    dbrRealisasi,
   } = totals;
 
   const num = (v: number) => v.toLocaleString("id-ID");
@@ -45,11 +57,17 @@ export default function Ikhtisar({
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("id-ID", { weekday: "short", day: "2-digit", month: "short" });
+    return d.toLocaleDateString("id-ID", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+    });
   };
 
-  const labelHarian = `Realisasi Harian${tanggalHariIni ? ` (${fmtDate(tanggalHariIni)})` : ""} (Kg)`;
-  const labelRencana = `Rencana Besok${tanggalBesok ? ` (${fmtDate(tanggalBesok)})` : ""} (Kg)`;
+  const labelHarian = `Realisasi Harian${tanggalHariIni ? ` (${fmtDate(tanggalHariIni)})` : ""
+    } (Kg)`;
+  const labelRencana = `Rencana Besok${tanggalBesok ? ` (${fmtDate(tanggalBesok)})` : ""
+    } (Kg)`;
 
   const pct = rencanaBesok > 0 ? (realisasiHarian / rencanaBesok) * 100 : 0;
   const deltaKg = realisasiHarian - rencanaBesok;
@@ -58,9 +76,12 @@ export default function Ikhtisar({
   const tone: Tone =
     rencanaBesok <= 0 ? "neutral" : pct >= 100 ? "good" : pct >= 80 ? "warn" : "bad";
 
-  // === HAPUS 'any' DI SINI: pakai LucideIcon ===
   type ToneSpec = {
-    ring: string; bg: string; bar: string; text: string; strip: string;
+    ring: string;
+    bg: string;
+    bar: string;
+    text: string;
+    strip: string;
     IconMain: LucideIcon;
     IconDeltaUp: LucideIcon;
     IconDeltaDown: LucideIcon;
@@ -110,133 +131,146 @@ export default function Ikhtisar({
   };
 
   const T = toneMap[tone];
+
   const kpiCardCx =
     "h-full shadow-sm hover:shadow-md transition-shadow rounded-2xl ring-1 " +
     "bg-white/80 dark:bg-slate-900/60 ring-slate-200/60 dark:ring-slate-800";
-  const statusCardCx = `h-full shadow-sm hover:shadow-md transition-shadow rounded-2xl ring-1 ${T.ring} ${T.bg}`;
-  const pctClamped = Math.max(0, Math.min(100, Math.round(pct)));
+
+  // helper: warna progress hijau kalau real >= ren, merah kalau belum tercapai
+  const progressClass = (real: number, plan: number) =>
+    plan > 0 && real < plan
+      ? "text-rose-600 dark:text-rose-400"
+      : "text-emerald-700 dark:text-emerald-300";
+
+  const pctProgress = (real: number, plan: number) =>
+    plan > 0 ? ((real / plan) * 100).toFixed(2) : "0.00";
+
+  // helper render kartu TM / TBM / Bibitan
+  const renderScopeCard = (
+    shortLabel: string,
+    longLabel: string,
+    plan: number,
+    real: number,
+  ) => (
+    <Card className="h-full rounded-2xl shadow-sm hover:shadow-md transition-shadow bg-white/80 dark:bg-slate-900/70 ring-1 ring-slate-200/70 dark:ring-slate-800">
+      <CardContent className="pt-4 pb-3 px-4 space-y-3">
+        <div>
+          <div className="text-xs font-semibold text-slate-700 dark:text-slate-100">
+            {shortLabel}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            {longLabel}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="space-y-0.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              Rencana (Kg)
+            </div>
+            <div className="font-semibold text-slate-800 dark:text-slate-100">
+              {num(plan)}
+            </div>
+          </div>
+          <div className="space-y-0.5 text-right">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              Realisasi (Kg)
+            </div>
+            <div className="font-semibold text-slate-800 dark:text-slate-100">
+              {num(real)}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={
+            "flex items-center justify-between text-xs font-semibold mt-1 " +
+            progressClass(real, plan)
+          }
+        >
+          <span>Progress</span>
+          <span>{pctProgress(real, plan)}%</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <section className="space-y-4">
       <SectionHeader title="Ikhtisar" desc="Dibagi berdasarkan TM, TBM, dan Bibitan" />
 
+      {/* Row Scope TM / TBM / Bibitan */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <ScopeCard scope="TM" rencana={tmRencana} realisasi={tmRealisasi} />
-        <ScopeCard scope="TBM" rencana={tbmRencana} realisasi={tbmRealisasi} />
-        <ScopeCard scope="Bibitan" rencana={bibRencana} realisasi={bibRealisasi} />
+        {renderScopeCard(
+          "TM",
+          "Tanaman Menghasilkan (TM)",
+          tmRencana,
+          tmRealisasi,
+        )}
+        {renderScopeCard(
+          "TBM",
+          "Tanaman Belum Menghasilkan (TBM)",
+          tbmRencana,
+          tbmRealisasi,
+        )}
+        {renderScopeCard(
+          "Bibitan",
+          "Bibitan",
+          bibRencana,
+          bibRealisasi,
+        )}
       </div>
 
+      {/* 4 KPI cards di bawahnya */}
       <div
-        className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+        className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
         role="region"
         aria-label="Ringkasan KPI"
       >
+        {/* Total Rencana */}
         <Card className={kpiCardCx}>
           <CardContent className="pt-4 pb-3">
             <StatLine label="Total Rencana (Kg)" value={num(totalRencana)} />
           </CardContent>
         </Card>
 
+        {/* Total Realisasi */}
         <Card className={kpiCardCx}>
           <CardContent className="pt-4 pb-3">
             <StatLine label="Total Realisasi (Kg)" value={num(totalRealisasi)} />
           </CardContent>
         </Card>
 
+        {/* DTM card TANPA persen progress */}
         <Card className={kpiCardCx}>
-          <CardContent className="pt-4 pb-3">
-            <StatLine label="DTM (Real/Ren)" value={`${num(dtmRealisasi)} / ${num(dtmRencana)}`} />
-          </CardContent>
-        </Card>
-
-        <Card className={kpiCardCx}>
-          <CardContent className="pt-4 pb-3">
-            <StatLine label="DBR (Real/Ren)" value={`${num(dbrRealisasi)} / ${num(dbrRencana)}`} />
-          </CardContent>
-        </Card>
-
-        {/* Realisasi Harian */}
-        <Card className={statusCardCx} title={labelHarian}>
-          <div className={`h-1 rounded-t-2xl ${T.strip}`} />
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className={`flex items-center gap-2 ${T.text}`}>
-                  <T.IconMain className="w-4 h-4" aria-hidden="true" />
-                  <span className="text-xs font-medium truncate">{labelHarian}</span>
-                </div>
-                <div className="mt-1">
-                  <span className="text-2xl font-semibold tracking-tight">{num(realisasiHarian)}</span>
-                  <span className="text-sm text-slate-500 dark:text-slate-400 ml-1">Kg</span>
-                </div>
-              </div>
-
-              {rencanaBesok > 0 && (
-                <div className="shrink-0 text-right">
-                  {deltaKg >= 0 ? (
-                    <div className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
-                      <TrendingUp className="w-3.5 h-3.5" />
-                      +{num(deltaKg)} Kg
-                    </div>
-                  ) : (
-                    <div className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300">
-                      <TrendingDown className="w-3.5 h-3.5" />
-                      {num(deltaKg)} Kg
-                    </div>
-                  )}
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                    vs Rencana Besok
-                  </div>
-                </div>
-              )}
+          <CardContent className="pt-4 pb-3 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">
+              DTM (Real / Ren)
             </div>
-
-            {rencanaBesok > 0 && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                  <span>Progress</span>
-                  <span className="font-medium">{pctClamped}%</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-200/70 dark:bg-slate-800">
-                  <div
-                    className={`h-2 rounded-full ${T.bar} transition-[width]`}
-                    style={{ width: `${pctClamped}%` }}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={pctClamped}
-                    role="progressbar"
-                  />
-                </div>
-              </div>
-            )}
+            <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+              <span>Realisasi</span>
+              <span className="font-medium">{num(dtmRealisasi)} Kg</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+              <span>Rencana</span>
+              <span className="font-medium">{num(dtmRencana)} Kg</span>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Rencana Besok */}
-        <Card className={kpiCardCx} title={labelRencana}>
-          <div className="h-1 rounded-t-2xl bg-slate-300/80 dark:bg-slate-700" />
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                  <CalendarDays className="w-4 h-4" aria-hidden="true" />
-                  <span className="text-xs font-medium truncate">{labelRencana}</span>
-                </div>
-                <div className="mt-1">
-                  <span className="text-2xl font-semibold tracking-tight">{num(rencanaBesok)}</span>
-                  <span className="text-sm text-slate-500 dark:text-slate-400 ml-1">Kg</span>
-                </div>
-              </div>
-
-              <div className="shrink-0 text-right">
-                <div className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                </div>
-                {realisasiHarian > 0 && (
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                    Sisa: {num(Math.max(0, rencanaBesok - realisasiHarian))} Kg
-                  </div>
-                )}
-              </div>
+        {/* DBR card TANPA persen progress */}
+        <Card className={kpiCardCx}>
+          <CardContent className="pt-4 pb-3 space-y-1">
+            <div className="text-[11px] font-medium text-slate-500 mb-1">
+              DBR (Real / Ren)
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+              <span>Realisasi</span>
+              <span className="font-medium">{num(dbrRealisasi)} Kg</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+              <span>Rencana</span>
+              <span className="font-medium">{num(dbrRencana)} Kg</span>
             </div>
           </CardContent>
         </Card>

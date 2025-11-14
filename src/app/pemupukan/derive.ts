@@ -426,13 +426,13 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
         g.app3_real += a.real_app3 ?? 0;
       }
 
-      // Harian: menggunakan total rencana/real (tidak dipisah TM/TBM)
+      // Harian: gunakan basis sesuai mode (supaya TM/TBM terpisah)
       if (r.tanggal === todayISO) {
-        g.rencana_today += r.rencana_total ?? 0;
-        g.real_today += r.realisasi_total ?? 0;
+        g.rencana_today += renBase;
+        g.real_today += realBase;
       }
       if (r.tanggal === tomorrowISO) {
-        g.rencana_tomorrow += r.rencana_total ?? 0;
+        g.rencana_tomorrow += renBase;
       }
 
       // Rencana per-aplikasi (kalau ada fieldnya)
@@ -519,9 +519,18 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     });
   };
 
-  const tmRows = useMemo(() => buildRows("TM"), [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]);
-  const tbmRows = useMemo(() => buildRows("TBM"), [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]);
-  const tmTbmRows = useMemo(() => buildRows("ALL"), [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]);
+  const tmRows = useMemo(
+    () => buildRows("TM"),
+    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+  );
+  const tbmRows = useMemo(
+    () => buildRows("TBM"),
+    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+  );
+  const tmTbmRows = useMemo(
+    () => buildRows("ALL"),
+    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+  );
 
   return {
     // options & filtered

@@ -8,7 +8,7 @@ export default function Page() {
     totalRencana, totalRealisasi,
     tmRencana, tmRealisasi, tbmRencana, tbmRealisasi, bibRencana, bibRealisasi,
     dtmRencana, dbrRencana, dtmRealisasi, dbrRealisasi,
-    pieTotal, barEfisiensiDistrik, barPerKebun, aggPupuk, stokVsSisa,
+    barPerKebun, aggPupuk, stokVsSisa,
     tmRows, tbmRows, tmTbmRows,
     headerDates, realWindow, realCutoffDate,
   } = usePemupukan();
@@ -23,8 +23,6 @@ export default function Page() {
         }}
       />
       <Visualisasi
-        pieTotal={pieTotal}
-        barEfisiensiDistrik={barEfisiensiDistrik}
         barPerKebun={barPerKebun}
         aggPupuk={aggPupuk}
         stokVsSisa={stokVsSisa}

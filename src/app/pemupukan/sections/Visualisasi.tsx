@@ -8,33 +8,10 @@ import {
   Pie,
   Cell,
   Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ComposedChart,
-  LabelList,
-  Line,
 } from "recharts";
-import {
-  COLOR_PLAN,
-  COLOR_REAL,
-  COLOR_REMAIN,
-  COLOR_STOK,
-  COLOR_SISA,
-} from "../constants";
-import { pctFormatter } from "../utils";
+import { COLOR_PLAN, COLOR_REAL } from "../constants";
 import React, { useMemo } from "react";
 
-type PieItem = { name: string; value: number; labelText: string };
-type DistrikRow = {
-  distrik: string;
-  progress: number;
-  rencana: number;
-  realisasi: number;
-};
 type KebunRow = {
   kebun: string;
   rencana: number;
@@ -84,7 +61,6 @@ export type TmRow = {
 };
 
 /* ===================[ TANGGAL: Asia/Jakarta helper ]=================== */
-/** ISO (YYYY-MM-DD) untuk zona Asia/Jakarta */
 function todayISOJakarta(base = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -93,20 +69,17 @@ function todayISOJakarta(base = new Date()): string {
     day: "2-digit",
   }).format(base);
 }
-/** Tambah hari berbasis ISO (diperlakukan sebagai jam 00:00 Asia/Jakarta) */
 function addDaysJakarta(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00+07:00`);
   d.setDate(d.getDate() + n);
   return todayISOJakarta(d);
 }
-/** 07/10/2025 dari ISO */
 function isoToShort(iso?: string) {
   if (!iso) return "-";
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return "-";
   return `${d}/${m}/${y}`;
 }
-/** "07 Oktober 2025" dari ISO dengan zona Asia/Jakarta */
 function isoToLongID(iso?: string) {
   if (!iso) return "-";
   const d = new Date(`${iso}T00:00:00+07:00`);
@@ -163,23 +136,27 @@ function computeTotals(rows?: TmRow[] | null) {
   };
 }
 
+/** Warna sel persen: hijau kalau >=100%, merah kalau <100% */
+const pctClass = (n?: number | null) => {
+  if (n == null || Number.isNaN(n)) return "";
+  const rounded = Math.round(n * 100) / 100;
+  return rounded >= 100
+    ? "text-emerald-700 font-semibold"
+    : "text-red-600 font-semibold";
+};
+
 export default function Visualisasi({
-  pieTotal,
-  barEfisiensiDistrik,
   aggPupuk,
-  stokVsSisa,
+  stokVsSisa, // tetap di-prop untuk kompatibilitas
   tmRows = [],
   tbmRows = [],
   tmTbmRows = [],
-  // fleksibel: boleh kirim today/tomorrow atau selasa/rabu
   headerDates,
-  // fleksibel: boleh kirim window start/end atau hanya cutoff (end)
   realWindow,
   realCutoffDate,
 }: {
-  pieTotal: PieItem[];
-  barEfisiensiDistrik: DistrikRow[];
-  barPerKebun?: KebunRow[]; // opsional agar kompatibel
+  pieTotal?: never;
+  barPerKebun?: KebunRow[];
   aggPupuk: AggPupukRow[];
   stokVsSisa: StokSisaRow[];
   tmRows?: TmRow[];
@@ -197,14 +174,11 @@ export default function Visualisasi({
   const tooltipBg = "#FFFFFF";
   const tooltipBorder = "#E5E7EB";
 
-  // ====== Header tanggal dinamis (hari ini/besok) ======
   const fallbackToday = todayISOJakarta();
   const todayISO = headerDates?.today ?? headerDates?.selasa ?? fallbackToday;
-
   const tomorrowISO =
     headerDates?.tomorrow ?? headerDates?.rabu ?? addDaysJakarta(todayISO, 1);
 
-  // ====== Window "Real 5 Hari Terakhir" ======
   const endISO = realWindow?.end ?? realCutoffDate ?? todayISO;
   const startISO = realWindow?.start ?? addDaysJakarta(endISO, -4);
 
@@ -223,7 +197,6 @@ export default function Visualisasi({
         maximumFractionDigits: 2,
       });
 
-  // total TM / TBM / TM&TBM
   const totalsTM = useMemo(() => computeTotals(tmRows), [tmRows]);
   const totalsTBM = useMemo(() => computeTotals(tbmRows), [tbmRows]);
   const totalsTmTbm = useMemo(
@@ -235,143 +208,95 @@ export default function Visualisasi({
     <section className="space-y-4">
       <SectionHeader title="Visualisasi" desc="Grafik utama" />
 
-      {/* ===================== GRID CHART ===================== */}
+      {/* ===================== CARD PIE RENCANA vs REALISASI ===================== */}
       <div className="grid grid-cols-12 gap-3">
-        {/* Pie komposisi */}
-        <div className="col-span-12 lg:col-span-4">
-          <ChartCard title="Komposisi Total (Realisasi vs Sisa Rencana)">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieTotal}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={58}
-                  outerRadius={96}
-                  labelLine={false}
-                  isAnimationActive={false}
-                >
-                  <LabelList dataKey="labelText" position="inside" />
-                  <Cell fill={COLOR_REAL} />
-                  <Cell fill={COLOR_REMAIN} />
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: tooltipBg,
-                    border: `1px solid ${tooltipBorder}`,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
+        <div className="col-span-12">
+          <ChartCard title="Rencana vs Realisasi per Jenis Pupuk (Kg)">
+            <div className="pb-1">
+              <p className="text-[11px] text-slate-500 mb-2">
+                Setiap pie chart merepresentasikan komposisi Rencana (Kg) vs
+                Realisasi (Kg) untuk satu jenis pupuk. Angka Ha ditampilkan di
+                bawah masing-masing chart.
+              </p>
+
+              {/* 4 card per baris, dibuat serendah mungkin supaya muat 2 baris */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-3 gap-y-1">
+                {aggPupuk.map((item) => {
+                  const data = [
+                    {
+                      name: "Rencana (Kg)",
+                      value: item.rencana || 0,
+                    },
+                    {
+                      name: "Realisasi (Kg)",
+                      value: item.realisasi || 0,
+                    },
+                  ];
+
+                  return (
+                    <div
+                      key={item.jenis}
+                      className="border border-slate-200 rounded-lg px-1 pt-1 pb-1 flex flex-col items-center bg-white"
+                    >
+                      <div className="text-[10px] font-semibold mb-0.5 text-center">
+                        {item.jenis}
+                      </div>
+
+                      {/* pie kecil supaya total tinggi card tidak berlebih */}
+                      <div className="w-full h-16">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={data}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius={16}
+                              outerRadius={24}
+                              labelLine={false}
+                              isAnimationActive={false}
+                            >
+                              {/* tidak ada label persen di dalam pie */}
+                              <Cell fill={COLOR_PLAN} />
+                              <Cell fill={COLOR_REAL} />
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: tooltipBg,
+                                border: `1px solid ${tooltipBorder}`,
+                              }}
+                              formatter={(value, name) => [
+                                (value as number).toLocaleString("id-ID") +
+                                " Kg",
+                                name,
+                              ]}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div className="mt-0.5 text-[9px] text-slate-600 text-center leading-tight space-y-[1px]">
+                        <div>
+                          Ren: {fmtNum(item.rencana)} Kg |{" "}
+                          {fmtNum(item.rencana_ha)} Ha
+                        </div>
+                        <div>
+                          Real: {fmtNum(item.realisasi)} Kg |{" "}
+                          {fmtNum(item.realisasi_ha)} Ha
+                        </div>
+                        <div>
+                          Progress:{" "}
+                          <span className={pctClass(item.progress)}>
+                            {fmtPct(item.progress)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </ChartCard>
         </div>
-
-        {/* Kg & Ha per jenis pupuk */}
-        <div className="col-span-12 lg:col-span-4">
-          <ChartCard title="Rencana vs Realisasi per Jenis Pupuk (Kg & Ha)">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={aggPupuk}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="jenis" />
-                <YAxis yAxisId="kg" />
-                <YAxis yAxisId="ha" orientation="right" />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar
-                  yAxisId="kg"
-                  dataKey="rencana"
-                  name="Rencana (Kg)"
-                  fill={COLOR_PLAN}
-                />
-                <Bar
-                  yAxisId="kg"
-                  dataKey="realisasi"
-                  name="Realisasi (Kg)"
-                  fill={COLOR_REAL}
-                />
-                <Line
-                  yAxisId="ha"
-                  type="monotone"
-                  dataKey="rencana_ha"
-                  name="Rencana (Ha)"
-                  stroke={COLOR_PLAN}
-                  dot={false}
-                  strokeDasharray="4 2"
-                />
-                <Line
-                  yAxisId="ha"
-                  type="monotone"
-                  dataKey="realisasi_ha"
-                  name="Realisasi (Ha)"
-                  stroke={COLOR_REAL}
-                  dot={false}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </ChartCard>
-        </div>
-
-        {/* Efisiensi distrik */}
-        <div className="col-span-12 lg:col-span-4">
-          <ChartCard title="Efisiensi per Distrik (Progress %)">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barEfisiensiDistrik}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="distrik" />
-                <YAxis />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar
-                  dataKey="progress"
-                  name="Progress (%)"
-                  fill={COLOR_REAL}
-                >
-                  <LabelList
-                    dataKey="progress"
-                    position="top"
-                    formatter={pctFormatter}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-        </div>
-
-        {/* Stok vs sisa */}
-        {stokVsSisa.length > 0 && (
-          <div className="col-span-12">
-            <ChartCard title="Stok Pupuk vs Sisa Kebutuhan">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={stokVsSisa}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="distrik" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="stok" name="Stok (Kg)" fill={COLOR_STOK}>
-                    <LabelList
-                      dataKey="stok_pct"
-                      position="top"
-                      formatter={pctFormatter}
-                    />
-                  </Bar>
-                  <Bar
-                    dataKey="sisa"
-                    name="Sisa Kebutuhan (Kg)"
-                    fill={COLOR_SISA}
-                  >
-                    <LabelList
-                      dataKey="sisa_pct"
-                      position="top"
-                      formatter={pctFormatter}
-                    />
-                  </Bar>
-                </ComposedChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          </div>
-        )}
       </div>
 
       {/* ===================== BAGIAN TABEL (di luar ChartCard) ===================== */}
@@ -385,125 +310,77 @@ export default function Visualisasi({
             <table className="w-full text-xs border-collapse">
               <thead className="text-[11px]">
                 <tr className="bg-slate-200 text-slate-800">
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     No.
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Kebun
                   </th>
-
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - I
                   </th>
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - II
                   </th>
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - III
                   </th>
-
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Rencana Hari Ini
                     <br />
                     {todayShort}
                     <br />
                     (Kg)
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Realisasi Hari Ini
                     <br />
                     {todayShort}
                     <br />
                     (Kg)
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Rencana Besok
                     <br />
                     {tomorrowShort}
                     <br />
                     (Kg)
                   </th>
-
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     Jumlah
                   </th>
                 </tr>
                 <tr className="bg-slate-100 text-slate-700">
-                  {/* Aplikasi I */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Aplikasi II */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Aplikasi III */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Jumlah */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">
                     Rencana (Total)
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
+                  <th className="border px-2 py-2 text-center">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -522,134 +399,140 @@ export default function Visualisasi({
                       key={`tm-${r.kebun}-${idx}`}
                       className={idx % 2 ? "bg-white" : "bg-slate-50"}
                     >
-                      <td className="border border-slate-200 px-2 py-1 text-center">
+                      <td className="border px-2 py-1 text-center">
                         {r.no ?? idx + 1}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1">
-                        {r.kebun}
-                      </td>
-
-                      {/* APLIKASI - I */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1">{r.kebun}</td>
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app1_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app1_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app1_pct
+                        )}`}
+                      >
                         {fmtPct(r.app1_pct)}
                       </td>
-
-                      {/* APLIKASI - II */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app2_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app2_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app2_pct
+                        )}`}
+                      >
                         {fmtPct(r.app2_pct)}
                       </td>
-
-                      {/* APLIKASI - III */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app3_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app3_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app3_pct
+                        )}`}
+                      >
                         {fmtPct(r.app3_pct)}
                       </td>
-
-                      {/* Harian */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.renc_selasa)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.real_selasa)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.renc_rabu)}
                       </td>
-
-                      {/* Jumlah */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.jumlah_rencana2025)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.jumlah_realSd0710)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.jumlah_pct
+                        )}`}
+                      >
                         {fmtPct(r.jumlah_pct)}
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
-
               {totalsTM && tmRows.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-200 font-semibold">
-                    <td
-                      className="border border-slate-300 px-2 py-2 text-center"
-                      colSpan={2}
-                    >
+                    <td colSpan={2} className="border px-2 py-2 text-center">
                       Jumlah TM
                     </td>
-
-                    {/* APLIKASI - I */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.app1_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.app1_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTM.app1_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTM.app1_pct)}
                     </td>
-
-                    {/* APLIKASI - II */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.app2_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.app2_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTM.app2_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTM.app2_pct)}
                     </td>
-
-                    {/* APLIKASI - III */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.app3_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.app3_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTM.app3_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTM.app3_pct)}
                     </td>
-
-                    {/* Harian */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.renc_today)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.real_today)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.renc_tomorrow)}
                     </td>
-
-                    {/* Jumlah */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.jumlah_rencana2025)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTM.jumlah_real5)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTM.jumlah_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTM.jumlah_pct)}
                     </td>
                   </tr>
@@ -668,125 +551,77 @@ export default function Visualisasi({
             <table className="w-full text-xs border-collapse">
               <thead className="text-[11px]">
                 <tr className="bg-slate-200 text-slate-800">
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     No.
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Kebun
                   </th>
-
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - I
                   </th>
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - II
                   </th>
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - III
                   </th>
-
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Rencana Hari Ini
                     <br />
                     {todayShort}
                     <br />
                     (Kg)
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Realisasi Hari Ini
                     <br />
                     {todayShort}
                     <br />
                     (Kg)
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Rencana Besok
                     <br />
                     {tomorrowShort}
                     <br />
                     (Kg)
                   </th>
-
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     Jumlah
                   </th>
                 </tr>
                 <tr className="bg-slate-100 text-slate-700">
-                  {/* Aplikasi I */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Aplikasi II */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Aplikasi III */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Jumlah */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">
                     Rencana (Total)
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
+                  <th className="border px-2 py-2 text-center">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -805,134 +640,140 @@ export default function Visualisasi({
                       key={`tbm-${r.kebun}-${idx}`}
                       className={idx % 2 ? "bg-white" : "bg-slate-50"}
                     >
-                      <td className="border border-slate-200 px-2 py-1 text-center">
+                      <td className="border px-2 py-1 text-center">
                         {r.no ?? idx + 1}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1">
-                        {r.kebun}
-                      </td>
-
-                      {/* APLIKASI - I */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1">{r.kebun}</td>
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app1_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app1_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app1_pct
+                        )}`}
+                      >
                         {fmtPct(r.app1_pct)}
                       </td>
-
-                      {/* APLIKASI - II */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app2_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app2_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app2_pct
+                        )}`}
+                      >
                         {fmtPct(r.app2_pct)}
                       </td>
-
-                      {/* APLIKASI - III */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app3_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app3_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app3_pct
+                        )}`}
+                      >
                         {fmtPct(r.app3_pct)}
                       </td>
-
-                      {/* Harian */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.renc_selasa)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.real_selasa)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.renc_rabu)}
                       </td>
-
-                      {/* Jumlah */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.jumlah_rencana2025)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.jumlah_realSd0710)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.jumlah_pct
+                        )}`}
+                      >
                         {fmtPct(r.jumlah_pct)}
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
-
               {totalsTBM && tbmRows.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-200 font-semibold">
-                    <td
-                      className="border border-slate-300 px-2 py-2 text-center"
-                      colSpan={2}
-                    >
+                    <td colSpan={2} className="border px-2 py-2 text-center">
                       Jumlah TBM
                     </td>
-
-                    {/* APLIKASI - I */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.app1_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.app1_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTBM.app1_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTBM.app1_pct)}
                     </td>
-
-                    {/* APLIKASI - II */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.app2_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.app2_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTBM.app2_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTBM.app2_pct)}
                     </td>
-
-                    {/* APLIKASI - III */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.app3_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.app3_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTBM.app3_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTBM.app3_pct)}
                     </td>
-
-                    {/* Harian */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.renc_today)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.real_today)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.renc_tomorrow)}
                     </td>
-
-                    {/* Jumlah */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.jumlah_rencana2025)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTBM.jumlah_real5)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTBM.jumlah_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTBM.jumlah_pct)}
                     </td>
                   </tr>
@@ -951,125 +792,77 @@ export default function Visualisasi({
             <table className="w-full text-xs border-collapse">
               <thead className="text-[11px]">
                 <tr className="bg-slate-200 text-slate-800">
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     No.
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Kebun
                   </th>
-
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - I
                   </th>
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - II
                   </th>
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     APLIKASI - III
                   </th>
-
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Rencana Hari Ini
                     <br />
                     {todayShort}
                     <br />
                     (Kg)
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Realisasi Hari Ini
                     <br />
                     {todayShort}
                     <br />
                     (Kg)
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th rowSpan={2} className="border px-2 py-2 text-center">
                     Rencana Besok
                     <br />
                     {tomorrowShort}
                     <br />
                     (Kg)
                   </th>
-
-                  <th
-                    colSpan={3}
-                    className="border border-slate-300 px-2 py-2 text-center"
-                  >
+                  <th colSpan={3} className="border px-2 py-2 text-center">
                     Jumlah
                   </th>
                 </tr>
                 <tr className="bg-slate-100 text-slate-700">
-                  {/* Aplikasi I */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Aplikasi II */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Aplikasi III */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    RENCANA
-                  </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">RENCANA</th>
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
-                  {/* Jumlah */}
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-center">
                     Rencana (Total)
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-center">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border border-slate-300 px-2 py-2 text-center">
-                    %
-                  </th>
+                  <th className="border px-2 py-2 text-center">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -1088,134 +881,140 @@ export default function Visualisasi({
                       key={`tm-tbm-${r.kebun}-${idx}`}
                       className={idx % 2 ? "bg-white" : "bg-slate-50"}
                     >
-                      <td className="border border-slate-200 px-2 py-1 text-center">
+                      <td className="border px-2 py-1 text-center">
                         {r.no ?? idx + 1}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1">
-                        {r.kebun}
-                      </td>
-
-                      {/* APLIKASI - I */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1">{r.kebun}</td>
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app1_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app1_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app1_pct
+                        )}`}
+                      >
                         {fmtPct(r.app1_pct)}
                       </td>
-
-                      {/* APLIKASI - II */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app2_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app2_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app2_pct
+                        )}`}
+                      >
                         {fmtPct(r.app2_pct)}
                       </td>
-
-                      {/* APLIKASI - III */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app3_rencana)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.app3_real)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.app3_pct
+                        )}`}
+                      >
                         {fmtPct(r.app3_pct)}
                       </td>
-
-                      {/* Harian */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.renc_selasa)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.real_selasa)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.renc_rabu)}
                       </td>
-
-                      {/* Jumlah */}
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.jumlah_rencana2025)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-right">
                         {fmtNum(r.jumlah_realSd0710)}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right">
+                      <td
+                        className={`border px-2 py-1 text-right ${pctClass(
+                          r.jumlah_pct
+                        )}`}
+                      >
                         {fmtPct(r.jumlah_pct)}
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
-
               {totalsTmTbm && tmTbmRows.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-200 font-semibold">
-                    <td
-                      className="border border-slate-300 px-2 py-2 text-center"
-                      colSpan={2}
-                    >
+                    <td colSpan={2} className="border px-2 py-2 text-center">
                       Jumlah TM &amp; TBM
                     </td>
-
-                    {/* APLIKASI - I */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.app1_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.app1_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTmTbm.app1_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTmTbm.app1_pct)}
                     </td>
-
-                    {/* APLIKASI - II */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.app2_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.app2_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTmTbm.app2_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTmTbm.app2_pct)}
                     </td>
-
-                    {/* APLIKASI - III */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.app3_rencana)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.app3_real)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTmTbm.app3_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTmTbm.app3_pct)}
                     </td>
-
-                    {/* Harian */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.renc_today)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.real_today)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.renc_tomorrow)}
                     </td>
-
-                    {/* Jumlah */}
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.jumlah_rencana2025)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-right">
                       {fmtNum(totalsTmTbm.jumlah_real5)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-2 text-right">
+                    <td
+                      className={`border px-2 py-2 text-right ${pctClass(
+                        totalsTmTbm.jumlah_pct
+                      )}`}
+                    >
                       {fmtPct(totalsTmTbm.jumlah_pct)}
                     </td>
                   </tr>
