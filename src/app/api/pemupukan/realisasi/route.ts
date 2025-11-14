@@ -1,4 +1,4 @@
-// src/app/api/pemupukan/rencana/route.ts
+// src/app/api/pemupukan/realisasi/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { KategoriTanaman } from '@prisma/client';
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const created = await prisma.rencanaPemupukan.create({
+    const created = await prisma.realisasiPemupukan.create({
       data: {
         kategori: kategori as KategoriTanaman,
         kebun,
@@ -57,15 +57,15 @@ export async function POST(req: Request) {
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
-    console.error('POST /api/pemupukan/rencana error', err);
+    console.error('POST /api/pemupukan/realisasi error', err);
     return NextResponse.json(
-      { message: 'Terjadi kesalahan saat menyimpan rencana.' },
+      { message: 'Terjadi kesalahan saat menyimpan realisasi.' },
       { status: 500 }
     );
   }
 }
 
-// GET untuk Riwayat Rencana (opsional filter kategori)
+// GET untuk Riwayat Realisasi (opsional filter kategori)
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -75,16 +75,16 @@ export async function GET(req: Request) {
       ? { kategori: kategori as KategoriTanaman }
       : {};
 
-    const data = await prisma.rencanaPemupukan.findMany({
+    const data = await prisma.realisasiPemupukan.findMany({
       where,
       orderBy: { tanggal: 'desc' },
     });
 
     return NextResponse.json(data);
   } catch (err) {
-    console.error('GET /api/pemupukan/rencana error', err);
+    console.error('GET /api/pemupukan/realisasi error', err);
     return NextResponse.json(
-      { message: 'Terjadi kesalahan saat mengambil data rencana.' },
+      { message: 'Terjadi kesalahan saat mengambil data realisasi.' },
       { status: 500 }
     );
   }

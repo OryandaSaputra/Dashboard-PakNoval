@@ -53,7 +53,7 @@ export type TmRow = {
   // Harian (Kg)
   renc_selasa: number; // Rencana Hari Ini
   real_selasa: number; // Realisasi Hari Ini
-  renc_rabu: number; // Rencana Besok
+  renc_rabu: number;   // Rencana Besok
   // Jumlah
   jumlah_rencana2025: number;
   jumlah_realSd0710: number; // Real 5 hari terakhir (total)
@@ -147,7 +147,6 @@ const pctClass = (n?: number | null) => {
 
 export default function Visualisasi({
   aggPupuk,
-  stokVsSisa, // tetap di-prop untuk kompatibilitas
   tmRows = [],
   tbmRows = [],
   tmTbmRows = [],
