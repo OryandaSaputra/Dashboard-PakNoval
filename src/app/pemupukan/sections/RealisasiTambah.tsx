@@ -13,7 +13,8 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { KEBUN_LABEL } from "../constants";
-import { RefreshCcw, Save } from "lucide-react";
+import { RefreshCcw, Save, Upload } from "lucide-react";
+import Swal from "sweetalert2";
 
 type Kategori = "TM" | "TBM" | "BIBITAN" | "";
 
@@ -21,16 +22,16 @@ type FormData = {
   kategori: Kategori;
   kebun: string;
   kodeKebun: string;
-  tanggal: string;   // YYYY-MM-DD
-  afd: string;       // AFD01, AFD02, ...
-  tt: string;        // Tahun Tanam
-  blok: string;      // D6, E10, dst
-  luas: string;      // ha (boleh desimal)
-  inv: string;       // pokok (integer)
+  tanggal: string; // YYYY-MM-DD
+  afd: string;
+  tt: string;
+  blok: string;
+  luas: string;
+  inv: string;
   jenisPupuk: string;
-  aplikasi: string;  // ke- (1,2,3..)
-  dosis: string;     // kg/pokok (desimal)
-  kgPupuk: string;   // total kg (manual)
+  aplikasi: string;
+  dosis: string;
+  kgPupuk: string; // otomatis = inv * dosis
 };
 
 const JENIS_PUPUK = [
@@ -50,14 +51,58 @@ const AFD_OPTIONS = Array.from({ length: 10 }, (_, i) =>
   `AFD${String(i + 1).padStart(2, "0")}`
 );
 
-function toNumberLoose(v: string): number {
-  if (!v) return 0;
+// >>>>>>> PERBAIKAN DI SINI (tambah tipe Date) <<<<<<
+function toNumberLoose(
+  v: string | number | Date | null | undefined
+): number {
+  if (v === null || v === undefined || v === "") return 0;
+  if (v instanceof Date) return 0; // kalau Date, bukan angka yg kita butuhkan
   const n = Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
 
+// Hitung KG pupuk = INV * Dosis, balikan string (supaya bisa ditaruh ke input)
+function computeKgPupuk(invStr: string, dosisStr: string): string {
+  const inv = toNumberLoose(invStr);
+  const dosis = toNumberLoose(dosisStr);
+  const kg = inv * dosis;
+  if (!Number.isFinite(kg) || kg === 0) return "";
+  return String(kg);
+}
+
+// helper untuk tanggal dari Excel (Date | number | string -> "YYYY-MM-DD")
+function toIsoDate(cell: unknown): string {
+  if (!cell) return "";
+  if (cell instanceof Date) {
+    const y = cell.getFullYear();
+    const m = String(cell.getMonth() + 1).padStart(2, "0");
+    const d = String(cell.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const asNum = Number(cell);
+  // kalau bentuknya nomor serial Excel
+  if (Number.isFinite(asNum) && asNum > 59 && asNum < 60000) {
+    const ms = (asNum - 25569) * 86400 * 1000;
+    const dt = new Date(ms);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(dt.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  // fallback: parse string biasa
+  const t = new Date(String(cell));
+  if (!Number.isNaN(t.getTime())) {
+    const y = t.getFullYear();
+    const m = String(t.getMonth() + 1).padStart(2, "0");
+    const d = String(t.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return "";
+}
+
 export default function RealisasiTambah() {
   const [submitting, setSubmitting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [form, setForm] = useState<FormData>({
     kategori: "",
     kebun: "",
@@ -70,7 +115,7 @@ export default function RealisasiTambah() {
     inv: "",
     jenisPupuk: "NPK 13.6.27.4",
     aplikasi: "1",
-    dosis: "3",
+    dosis: "1", // default 1
     kgPupuk: "",
   });
 
@@ -100,15 +145,22 @@ export default function RealisasiTambah() {
       inv: "",
       jenisPupuk: "NPK 13.6.27.4",
       aplikasi: "1",
-      dosis: "3",
+      dosis: "1",
       kgPupuk: "",
     });
   };
 
+  // ============ SUBMIT MANUAL ============
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.kategori) {
-      alert("Silakan pilih kategori (TM / TBM / BIBITAN) terlebih dahulu.");
+      Swal.fire({
+        title: "Kategori belum dipilih",
+        text: "Silakan pilih kategori (TM / TBM / BIBITAN) terlebih dahulu.",
+        icon: "warning",
+        confirmButtonText: "OK",
+      });
       return;
     }
 
@@ -139,16 +191,352 @@ export default function RealisasiTambah() {
       if (!res.ok) {
         const text = await res.text();
         console.error("Error response:", text);
+
+        Swal.fire({
+          title: "Gagal menyimpan",
+          text:
+            text ||
+            "Gagal menyimpan realisasi pemupukan. Silakan cek kembali data atau hubungi admin.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+
         throw new Error(text || "Gagal menyimpan realisasi");
       }
 
-      alert("Realisasi pemupukan berhasil disimpan ke database.");
+      Swal.fire({
+        title: "Berhasil",
+        text: "Realisasi pemupukan berhasil disimpan ke database.",
+        icon: "success",
+        confirmButtonText: "OK",
+      });
+
       reset();
     } catch (err) {
       console.error(err);
-      alert("Gagal menyimpan data. Cek console untuk detail.");
+      Swal.fire({
+        title: "Terjadi kesalahan",
+        text: "Gagal menyimpan data. Cek console atau hubungi admin.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ============ IMPORT DARI EXCEL ============
+
+  const handleImportExcel = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!form.kategori) {
+      Swal.fire({
+        title: "Kategori belum dipilih",
+        text: "Pilih kategori (TM / TBM / BIBITAN) dulu, kategori ini akan dipakai untuk semua baris Excel.",
+        icon: "warning",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const XLSX = (await import("xlsx")) as typeof import("xlsx");
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, {
+        type: "array",
+        cellDates: true,
+        dateNF: "yyyy-mm-dd",
+      });
+
+      const sheetNames = workbook.SheetNames;
+      if (!sheetNames.length) {
+        await Swal.fire({
+          title: "File kosong",
+          text: "Workbook tidak memiliki sheet.",
+          icon: "warning",
+        });
+        setImporting(false);
+        return;
+      }
+
+      // === PEMILIHAN SHEET DI SINI ===
+      let selectedSheetName = sheetNames[0];
+
+      if (sheetNames.length > 1) {
+        const { value: picked } = await Swal.fire({
+          title: "Pilih Sheet",
+          text: "Pilih nama sheet yang berisi data realisasi pemupukan.",
+          icon: "question",
+          input: "select",
+          inputOptions: sheetNames.reduce<Record<string, string>>(
+            (acc, name) => {
+              acc[name] = name;
+              return acc;
+            },
+            {}
+          ),
+          inputValue: sheetNames[0],
+          showCancelButton: true,
+          confirmButtonText: "Pakai sheet ini",
+          cancelButtonText: "Batal",
+        });
+
+        if (!picked) {
+          setImporting(false);
+          return;
+        }
+
+        selectedSheetName = picked;
+      }
+
+      const sheet = workbook.Sheets[selectedSheetName];
+
+      const rows = XLSX.utils.sheet_to_json<(string | number | Date)[]>(
+        sheet,
+        {
+          header: 1,
+          defval: "",
+        }
+      );
+
+      if (!rows.length) {
+        Swal.fire({
+          title: "File kosong",
+          text: "Sheet Excel tidak memiliki data.",
+          icon: "warning",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      // --- CARI BARIS HEADER & NORMALISASI ---
+      const normalize = (s: string) =>
+        String(s ?? "")
+          .normalize("NFKD")
+          .replace(/\s+/g, "")        // buang semua spasi
+          .replace(/[^A-Z0-9]/gi, "") // buang simbol
+          .toUpperCase();
+
+      // daftar header yang kita harapkan (sudah dinormalisasi)
+      const targetHeaders = [
+        "KEBUN",
+        "KODE KEBUN",
+        "TANGGAL",
+        "AFD",
+        "TT",
+        "BLOK",
+        "LUAS",
+        "INV",
+        "JENIS PUPUK",
+        "APLIKASI",
+        "DOSIS",
+        "KG PUPUK",
+      ].map(normalize);
+
+      let headerRowIndex = -1;
+      let headerNorm: string[] = [];
+
+      // scan maks. 20 baris pertama untuk mencari baris header
+      const maxScan = Math.min(rows.length, 20);
+      for (let r = 0; r < maxScan; r++) {
+        const norm = rows[r].map((h) => normalize(String(h ?? "")));
+        const matchCount = norm.filter((col) =>
+          targetHeaders.includes(col)
+        ).length;
+
+        if (matchCount >= 4) {
+          headerRowIndex = r;
+          headerNorm = norm;
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        console.log("Gagal menemukan baris header, rows[0..5] =", rows.slice(0, 5));
+        Swal.fire({
+          title: "Header tidak sesuai",
+          html:
+            "Tidak dapat menemukan baris header.<br/>" +
+            "Pastikan ada satu baris yang berisi:<br/>" +
+            "<b>KEBUN, KODE KEBUN, TANGGAL, AFD, TT, BLOK, LUAS, INV, JENIS PUPUK, APLIKASI, DOSIS, KG PUPUK</b>",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      const findIdx = (...candidates: string[]) => {
+        const candNorms = candidates.map(normalize);
+        return headerNorm.findIndex((col) => candNorms.includes(col));
+      };
+
+      const idxKebun = findIdx("KEBUN");
+      const idxKodeKebun = findIdx("KODE KEBUN", "KODE_KEBUN");
+      const idxTanggal = findIdx("TANGGAL", "TGL");
+      const idxAfd = findIdx("AFD", "AFDELING");
+      const idxTt = findIdx("TT", "TAHUN TANAM");
+      const idxBlok = findIdx("BLOK");
+      const idxLuas = findIdx("LUAS", "LUAS (HA)");
+      const idxInv = findIdx("INV", "POKOK", "JUMLAH POKOK");
+      const idxJenisPupuk = findIdx("JENIS PUPUK", "PUPUK");
+      const idxAplikasi = findIdx("APLIKASI", "APLIKASI (KE-)");
+      const idxDosis = findIdx("DOSIS", "DOSIS (KG/POKOK)");
+      const idxKgPupuk = findIdx("KG PUPUK", "KG_PUPUK", "KG PUPUK (TOTAL)");
+
+      const requiredIdx = [
+        idxKebun,
+        idxKodeKebun,
+        idxTanggal,
+        idxAfd,
+        idxTt,
+        idxBlok,
+        idxLuas,
+        idxInv,
+        idxJenisPupuk,
+        idxAplikasi,
+        idxDosis,
+        idxKgPupuk,
+      ];
+
+      if (requiredIdx.some((i) => i === -1)) {
+        console.log("HEADER NORMALIZED:", headerNorm, {
+          idxKebun,
+          idxKodeKebun,
+          idxTanggal,
+          idxAfd,
+          idxTt,
+          idxBlok,
+          idxLuas,
+          idxInv,
+          idxJenisPupuk,
+          idxAplikasi,
+          idxDosis,
+          idxKgPupuk,
+        });
+
+        Swal.fire({
+          title: "Header tidak sesuai",
+          html:
+            "Pastikan header Excel minimal berisi:<br/>" +
+            "<b>KEBUN, KODE KEBUN, TANGGAL, AFD, TT, BLOK, LUAS, INV, JENIS PUPUK, APLIKASI, DOSIS, KG PUPUK</b>",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      // DI DALAM handleImportExcel
+      let success = 0;
+      let failed = 0;
+
+      for (let i = headerRowIndex + 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+
+        const kebunRaw = row[idxKebun];
+        const kodeKebunRaw = row[idxKodeKebun];
+        const tanggalRaw = row[idxTanggal];
+
+        const kebunStr = String(kebunRaw ?? "").trim() || "-";
+        const kodeKebunStr = String(kodeKebunRaw ?? "").trim() || "-";
+
+        const parsedDate = toIsoDate(tanggalRaw);
+
+        let tanggalFinal: string | null = null;
+        if (!tanggalRaw || String(tanggalRaw).trim() === "") {
+          tanggalFinal = null;        // 🔹 tanggal kosong → null
+        } else if (parsedDate) {
+          tanggalFinal = parsedDate;  // 🔹 tanggal valid → "YYYY-MM-DD"
+        } else {
+          tanggalFinal = "-";         // 🔹 ada isi tapi ga valid → "-"
+        }
+
+        const afdStr =
+          idxAfd >= 0 ? (String(row[idxAfd] ?? "").trim() || "-") : "-";
+
+        const ttStr =
+          idxTt >= 0 ? (String(row[idxTt] ?? "").trim() || "-") : "-";
+
+        const blokStr =
+          idxBlok >= 0
+            ? (String(row[idxBlok] ?? "").trim().toUpperCase() || "-")
+            : "-";
+
+        const luasCell = idxLuas >= 0 ? row[idxLuas] : "";
+        const invCell = row[idxInv];
+
+        const jenisPupukStr =
+          idxJenisPupuk >= 0
+            ? (String(row[idxJenisPupuk] ?? "").trim() || "-")
+            : "-";
+
+        const aplikasiCell = idxAplikasi >= 0 ? row[idxAplikasi] : 1;
+        const dosisCell = idxDosis >= 0 ? row[idxDosis] : 0;
+        const kgPupukCell = idxKgPupuk >= 0 ? row[idxKgPupuk] : undefined;
+
+        const invNum = toNumberLoose(invCell);
+        const dosisNum = toNumberLoose(dosisCell);
+
+        let kgPupukNum = kgPupukCell
+          ? toNumberLoose(kgPupukCell)
+          : invNum * dosisNum;
+
+        if (!Number.isFinite(kgPupukNum)) kgPupukNum = 0;
+
+        const payload = {
+          kategori: form.kategori,
+          kebun: kebunStr,
+          kode_kebun: kodeKebunStr,
+          tanggal: tanggalFinal, // string | null | "-"
+          afd: afdStr,
+          tt: ttStr,
+          blok: blokStr,
+          luas: toNumberLoose(luasCell),
+          inv: Math.round(invNum),
+          jenis_pupuk: jenisPupukStr,
+          aplikasi: Number(toNumberLoose(aplikasiCell) || 1),
+          dosis: dosisNum,
+          kg_pupuk: kgPupukNum,
+        };
+
+        try {
+          const res = await fetch("/api/pemupukan/realisasi", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) failed += 1;
+          else success += 1;
+        } catch (err) {
+          console.error("Row import error:", err);
+          failed += 1;
+        }
+      }
+
+
+      Swal.fire({
+        title: "Import selesai",
+        html: `Berhasil import <b>${success}</b> baris.<br/>Gagal import <b>${failed}</b> baris.`,
+        icon: success > 0 && failed === 0 ? "success" : "warning",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        title: "Gagal membaca Excel",
+        text:
+          "Terjadi kesalahan saat membaca file Excel. Pastikan format file sudah benar.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -156,16 +544,40 @@ export default function RealisasiTambah() {
     <section id="real-tambah" className="space-y-2 scroll-mt-24">
       <SectionHeader
         title="Realisasi Pemupukan - Tambah Data"
-        desc="Isi data realisasi sesuai laporan lapangan."
+        desc="Isi data realisasi secara manual atau import dari Excel."
       />
 
       <Card className="bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-[13px]">Formulir Realisasi</CardTitle>
+          <div className="flex items-center gap-2">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleImportExcel}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={importing}
+                asChild
+              >
+                <span>
+                  <Upload className="h-4 w-4" />
+                  {importing ? "Import..." : "Import dari Excel"}
+                </span>
+              </Button>
+            </label>
+          </div>
         </CardHeader>
+
         <CardContent className="pt-2">
           <form className="space-y-6" onSubmit={handleSubmit}>
-            {/* ===== Pilih Kategori (TM / TBM / BIBITAN) ===== */}
+            {/* Kategori */}
             <div className="space-y-2">
               <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 Kategori Tanaman
@@ -179,21 +591,24 @@ export default function RealisasiTambah() {
                     <SelectValue placeholder="Pilih kategori (TM / TBM / BIBITAN)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="TM">TM (Tanaman Menghasilkan)</SelectItem>
-                    <SelectItem value="TBM">TBM (Tanaman Belum Menghasilkan)</SelectItem>
+                    <SelectItem value="TM">
+                      TM (Tanaman Menghasilkan)
+                    </SelectItem>
+                    <SelectItem value="TBM">
+                      TBM (Tanaman Belum Menghasilkan)
+                    </SelectItem>
                     <SelectItem value="BIBITAN">BIBITAN</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* ===== Identitas Lokasi ===== */}
+            {/* Identitas Lokasi */}
             <div className="space-y-3">
               <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 Identitas Lokasi
               </p>
               <div className="grid grid-cols-12 gap-3">
-                {/* Baris 1 */}
                 <div className="col-span-12 md:col-span-4">
                   <label className="text-[11px] text-slate-500 dark:text-slate-400">
                     Nama Kebun
@@ -239,7 +654,6 @@ export default function RealisasiTambah() {
                   />
                 </div>
 
-                {/* Baris 2 */}
                 <div className="col-span-6 md:col-span-3">
                   <label className="text-[11px] text-slate-500 dark:text-slate-400">
                     AFD
@@ -303,13 +717,12 @@ export default function RealisasiTambah() {
               </div>
             </div>
 
-            {/* ===== Detail Pemupukan ===== */}
+            {/* Detail Pemupukan */}
             <div className="space-y-3">
               <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 Detail Pemupukan
               </p>
               <div className="grid grid-cols-12 gap-3">
-                {/* 1 baris pas 12 kolom: 2 + 3 + 2 + 2 + 3 */}
                 <div className="col-span-6 md:col-span-2">
                   <label className="text-[11px] text-slate-500 dark:text-slate-400">
                     INV (Pokok)
@@ -317,9 +730,14 @@ export default function RealisasiTambah() {
                   <Input
                     inputMode="numeric"
                     value={form.inv}
-                    onChange={(e) =>
-                      onChange("inv", e.target.value.replace(/[^\d]/g, ""))
-                    }
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^\d]/g, "");
+                      setForm((prev) => ({
+                        ...prev,
+                        inv: raw,
+                        kgPupuk: computeKgPupuk(raw, prev.dosis),
+                      }));
+                    }}
                     placeholder="mis. 2067"
                     className="h-10"
                   />
@@ -367,22 +785,28 @@ export default function RealisasiTambah() {
                   <Input
                     inputMode="decimal"
                     value={form.dosis}
-                    onChange={(e) => onChange("dosis", e.target.value)}
-                    placeholder="mis. 3"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setForm((prev) => ({
+                        ...prev,
+                        dosis: raw,
+                        kgPupuk: computeKgPupuk(prev.inv, raw),
+                      }));
+                    }}
+                    placeholder="mis. 1"
                     className="h-10"
                   />
                 </div>
 
                 <div className="col-span-12 md:col-span-3">
                   <label className="text-[11px] text-slate-500 dark:text-slate-400">
-                    KG Pupuk (Total)
+                    KG Pupuk (Total) — otomatis = INV × Dosis
                   </label>
                   <Input
                     inputMode="decimal"
                     value={form.kgPupuk}
-                    onChange={(e) => onChange("kgPupuk", e.target.value)}
-                    placeholder="mis. 6201"
-                    className="h-10"
+                    readOnly
+                    className="h-10 bg-slate-50 dark:bg-slate-900/40"
                   />
                 </div>
               </div>
@@ -432,6 +856,32 @@ export default function RealisasiTambah() {
           </form>
         </CardContent>
       </Card>
+
+      {importing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40">
+          <div className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-lg">
+            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24">
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+                fill="none"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+              />
+            </svg>
+            <span className="text-sm text-slate-700">
+              Mengimport data dari Excel, mohon tunggu...
+            </span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

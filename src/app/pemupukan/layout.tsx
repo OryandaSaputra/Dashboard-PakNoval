@@ -16,22 +16,46 @@ function Frame({ children }: { children: React.ReactNode }) {
 
   const {
     // ui
-    sidebarOpen, setSidebarOpen,
-    navRealOpen, setNavRealOpen,
-    navRencanaOpen, setNavRencanaOpen,
-    filterOpen, setFilterOpen,
+    sidebarOpen,
+    setSidebarOpen,
+    navRealOpen,
+    setNavRealOpen,
+    navRencanaOpen,
+    setNavRencanaOpen,
+    filterOpen,
+    setFilterOpen,
 
     // filters + setters
-    distrik, setDistrik,
-    kebun, setKebun,
-    search, setSearch,
-    jenis, setJenis,
-    dateFrom, setDateFrom,
-    dateTo, setDateTo,
+    distrik,
+    setDistrik,
+    kebun,
+    setKebun,
+    kategori,
+    setKategori,
+    afd,
+    setAfd,
+    tt,
+    setTt,
+    blok,
+    setBlok,
+    search,
+    setSearch,
+    jenis,
+    setJenis,
+    dateFrom,
+    setDateFrom,
+    dateTo,
+    setDateTo,
 
-    // options & helpers
-    distrikOptions, kebunOptions, jenisOptions, resetFilter
-
+    // options
+    distrikOptions,
+    kebunOptions,
+    kategoriOptions,
+    afdOptions,
+    ttOptions,
+    blokOptions,
+    jenisOptions,
+    resetFilter,
   } = usePemupukan();
 
   return (
@@ -39,7 +63,7 @@ function Frame({ children }: { children: React.ReactNode }) {
       className="min-h-screen flex bg-[--ptpn-cream] dark:bg-slate-950 text-slate-900 dark:text-slate-100"
       style={styleVars}
     >
-      {/* Props untuk mengontrol menu Realisasi/Rencana */}
+      {/* Sidebar desktop */}
       <Sidebar
         navRealOpen={navRealOpen}
         setNavRealOpen={setNavRealOpen}
@@ -48,6 +72,7 @@ function Frame({ children }: { children: React.ReactNode }) {
         setFilterOpen={setFilterOpen}
       />
 
+      {/* Sidebar mobile */}
       <MobileSidebar
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
@@ -66,7 +91,7 @@ function Frame({ children }: { children: React.ReactNode }) {
                 <Menu className="h-5 w-5" />
               </button>
               <h1 className="text-base font-semibold tracking-tight">
-                Dashboard Pemupukan • Rencana vs Realisasi
+                Dashboard Pemupukan • Divisi Tanaman
               </h1>
             </div>
             <div className="flex items-center gap-2">
@@ -81,44 +106,92 @@ function Frame({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Content (hanya halaman yang aktif) */}
+        {/* Content */}
         <main className="max-w-7xl mx-auto px-4 py-5 space-y-6">
-          {/* chips filter aktif */}
+          {/* Chips filter aktif */}
           <div className="flex flex-wrap gap-2 text-[11px]">
-            {distrik !== "all" && <Badge variant="secondary">Distrik: {distrik}</Badge>}
-            {kebun !== "all" && (
-              <Badge variant="secondary">Kebun: {KEBUN_LABEL[kebun] ?? kebun}</Badge>
+            {distrik !== "all" && (
+              <Badge variant="secondary">Distrik: {distrik}</Badge>
             )}
-            {search && <Badge variant="secondary">Cari: {search}</Badge>}
-            {jenis !== "all" && <Badge variant="secondary">Jenis: {jenis}</Badge>}
-            {dateFrom && <Badge variant="secondary">Dari: {dateFrom}</Badge>}
-            {dateTo && <Badge variant="secondary">Sampai: {dateTo}</Badge>}
+            {kebun !== "all" && (
+              <Badge variant="secondary">
+                Kebun: {KEBUN_LABEL[kebun] ?? kebun}
+              </Badge>
+            )}
+            {kategori !== "all" && (
+              <Badge variant="secondary">Kategori: {kategori}</Badge>
+            )}
+            {afd !== "all" && (
+              <Badge variant="secondary">AFD: {afd}</Badge>
+            )}
+            {tt !== "all" && <Badge variant="secondary">TT: {tt}</Badge>}
+            {blok !== "all" && (
+              <Badge variant="secondary">Blok: {blok}</Badge>
+            )}
+            {jenis !== "all" && (
+              <Badge variant="secondary">Jenis: {jenis}</Badge>
+            )}
+            {dateFrom && (
+              <Badge variant="secondary">Dari: {dateFrom}</Badge>
+            )}
+            {dateTo && (
+              <Badge variant="secondary">Sampai: {dateTo}</Badge>
+            )}
+            {search && (
+              <Badge variant="secondary">Cari: {search}</Badge>
+            )}
+
             {distrik === "all" &&
               kebun === "all" &&
-              !search &&
+              kategori === "all" &&
+              afd === "all" &&
+              tt === "all" &&
+              blok === "all" &&
               jenis === "all" &&
               !dateFrom &&
-              !dateTo && <span className="text-slate-400">Tidak ada filter aktif</span>}
+              !dateTo &&
+              !search && (
+                <span className="text-slate-400">
+                  Tidak ada filter aktif
+                </span>
+              )}
           </div>
 
           {children}
         </main>
       </div>
 
+      {/* Filter Panel */}
       <FilterPanel
         open={filterOpen}
         onClose={() => setFilterOpen(false)}
-        // filters
-        distrik={distrik} setDistrik={setDistrik}
-        kebun={kebun} setKebun={setKebun}
-        jenis={jenis} setJenis={setJenis}
+        distrik={distrik}
+        setDistrik={setDistrik}
+        kebun={kebun}
+        setKebun={setKebun}
+        kategori={kategori}
+        setKategori={setKategori}
+        afd={afd}
+        setAfd={setAfd}
+        tt={tt}
+        setTt={setTt}
+        blok={blok}
+        setBlok={setBlok}
+        jenis={jenis}
+        setJenis={setJenis}
         jenisOptions={jenisOptions}
-        dateFrom={dateFrom} setDateFrom={setDateFrom}
-        dateTo={dateTo} setDateTo={setDateTo}
-        search={search} setSearch={setSearch}
-        // options
+        dateFrom={dateFrom}
+        setDateFrom={setDateFrom}
+        dateTo={dateTo}
+        setDateTo={setDateTo}
+        search={search}
+        setSearch={setSearch}
         distrikOptions={distrikOptions}
         kebunOptions={kebunOptions}
+        kategoriOptions={kategoriOptions}
+        afdOptions={afdOptions}
+        ttOptions={ttOptions}
+        blokOptions={blokOptions}
         resetFilter={resetFilter}
       />
     </div>

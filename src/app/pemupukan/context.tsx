@@ -8,8 +8,7 @@ import React, {
   useState,
 } from "react";
 import { FertRow } from "./types";
-import { usePemupukanDerived } from "./derive";
-import type { TmTableRow } from "./derive";
+import { usePemupukanDerived, TmTableRow, Kategori } from "./derive";
 
 type Ctx = {
   // data
@@ -21,6 +20,14 @@ type Ctx = {
   setDistrik: (v: string) => void;
   kebun: string;
   setKebun: (v: string) => void;
+  kategori: Kategori | "all";
+  setKategori: (v: Kategori | "all") => void;
+  afd: string;
+  setAfd: (v: string) => void;
+  tt: string;
+  setTt: (v: string) => void;
+  blok: string;
+  setBlok: (v: string) => void;
   search: string;
   setSearch: (v: string) => void;
   jenis: string;
@@ -47,6 +54,10 @@ type Ctx = {
   jenisOptions: string[];
   distrikOptions: string[];
   kebunOptions: string[];
+  kategoriOptions: (Kategori | "all")[];
+  afdOptions: string[];
+  ttOptions: string[];
+  blokOptions: string[];
 
   // derived
   filtered: FertRow[];
@@ -95,12 +106,12 @@ type Ctx = {
     sisa_pct: number;
   }[];
 
-  // === TABEL TM/TBM/TM&TBM ===
+  // tabel TM/TBM/TM&TBM
   tmRows: TmTableRow[];
   tbmRows: TmTableRow[];
   tmTbmRows: TmTableRow[];
 
-  // === Informasi tanggal untuk header tabel TM/TBM ===
+  // tanggal header
   headerDates?: { today?: string; tomorrow?: string; selasa?: string; rabu?: string };
   realWindow?: { start?: string; end?: string };
   realCutoffDate?: string;
@@ -122,6 +133,10 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
   // filters
   const [distrik, setDistrik] = useState<string>("all");
   const [kebun, setKebun] = useState<string>("all");
+  const [kategori, setKategori] = useState<Kategori | "all">("all");
+  const [afd, setAfd] = useState<string>("all");
+  const [tt, setTt] = useState<string>("all");
+  const [blok, setBlok] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
   const [jenis, setJenis] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
@@ -163,6 +178,10 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
   const derived = usePemupukanDerived(rows, {
     distrik,
     kebun,
+    kategori,
+    afd,
+    tt,
+    blok,
     search,
     jenis,
     dateFrom,
@@ -172,6 +191,10 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
   const resetFilter = () => {
     setDistrik("all");
     setKebun("all");
+    setKategori("all");
+    setAfd("all");
+    setTt("all");
+    setBlok("all");
     setSearch("");
     setJenis("all");
     setDateFrom("");
@@ -187,6 +210,14 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     setDistrik,
     kebun,
     setKebun,
+    kategori,
+    setKategori,
+    afd,
+    setAfd,
+    tt,
+    setTt,
+    blok,
+    setBlok,
     search,
     setSearch,
     jenis,
@@ -213,6 +244,10 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     jenisOptions,
     distrikOptions: derived.distrikOptions,
     kebunOptions: derived.kebunOptions,
+    kategoriOptions: derived.kategoriOptions,
+    afdOptions: derived.afdOptions,
+    ttOptions: derived.ttOptions,
+    blokOptions: derived.blokOptions,
 
     // derived
     filtered: derived.filtered,
@@ -237,12 +272,10 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     aggPupuk: derived.aggPupuk,
     stokVsSisa: derived.stokVsSisa,
 
-    // === tabel TM/TBM/TM&TBM ===
     tmRows: derived.tmRows,
     tbmRows: derived.tbmRows,
     tmTbmRows: derived.tmTbmRows,
 
-    // tanggal untuk header tabel
     headerDates: derived.headerDates,
     realWindow: derived.realWindow,
     realCutoffDate: derived.realCutoffDate,
