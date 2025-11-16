@@ -52,9 +52,7 @@ const AFD_OPTIONS = Array.from({ length: 10 }, (_, i) =>
 );
 
 // >>>>>>> PERBAIKAN DI SINI (tambah tipe Date) <<<<<<
-function toNumberLoose(
-  v: string | number | Date | null | undefined
-): number {
+function toNumberLoose(v: string | number | Date | null | undefined): number {
   if (v === null || v === undefined || v === "") return 0;
   if (v instanceof Date) return 0; // kalau Date, bukan angka yg kita butuhkan
   const n = Number(String(v).replace(",", "."));
@@ -225,7 +223,7 @@ export default function RealisasiTambah() {
     }
   };
 
-  // ============ IMPORT DARI EXCEL ============
+  // ============ IMPORT DARI EXCEL (BULK) ============
 
   const handleImportExcel = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -319,7 +317,7 @@ export default function RealisasiTambah() {
       const normalize = (s: string) =>
         String(s ?? "")
           .normalize("NFKD")
-          .replace(/\s+/g, "")        // buang semua spasi
+          .replace(/\s+/g, "") // buang semua spasi
           .replace(/[^A-Z0-9]/gi, "") // buang simbol
           .toUpperCase();
 
@@ -431,9 +429,24 @@ export default function RealisasiTambah() {
         return;
       }
 
-      // DI DALAM handleImportExcel
-      let success = 0;
-      let failed = 0;
+      // === KUMPULKAN PAYLOAD UNTUK BULK INSERT ===
+      type BulkPayload = {
+        kategori: string;
+        kebun: string;
+        kode_kebun: string;
+        tanggal: string | null | "-";
+        afd: string;
+        tt: string;
+        blok: string;
+        luas: number;
+        inv: number;
+        jenis_pupuk: string;
+        aplikasi: number;
+        dosis: number;
+        kg_pupuk: number;
+      };
+
+      const payloads: BulkPayload[] = [];
 
       for (let i = headerRowIndex + 1; i < rows.length; i++) {
         const row = rows[i];
@@ -443,18 +456,28 @@ export default function RealisasiTambah() {
         const kodeKebunRaw = row[idxKodeKebun];
         const tanggalRaw = row[idxTanggal];
 
+        // kalau semua kolom penting kosong → skip
+        const isRowEmpty =
+          !kebunRaw &&
+          !kodeKebunRaw &&
+          !tanggalRaw &&
+          !row[idxInv] &&
+          !row[idxLuas];
+
+        if (isRowEmpty) continue;
+
         const kebunStr = String(kebunRaw ?? "").trim() || "-";
         const kodeKebunStr = String(kodeKebunRaw ?? "").trim() || "-";
 
         const parsedDate = toIsoDate(tanggalRaw);
 
-        let tanggalFinal: string | null = null;
+        let tanggalFinal: string | null | "-" = null;
         if (!tanggalRaw || String(tanggalRaw).trim() === "") {
-          tanggalFinal = null;        // 🔹 tanggal kosong → null
+          tanggalFinal = null; // tanggal kosong → null
         } else if (parsedDate) {
-          tanggalFinal = parsedDate;  // 🔹 tanggal valid → "YYYY-MM-DD"
+          tanggalFinal = parsedDate; // tanggal valid → "YYYY-MM-DD"
         } else {
-          tanggalFinal = "-";         // 🔹 ada isi tapi ga valid → "-"
+          tanggalFinal = "-"; // ada isi tapi ga valid → "-"
         }
 
         const afdStr =
@@ -489,7 +512,7 @@ export default function RealisasiTambah() {
 
         if (!Number.isFinite(kgPupukNum)) kgPupukNum = 0;
 
-        const payload = {
+        payloads.push({
           kategori: form.kategori,
           kebun: kebunStr,
           kode_kebun: kodeKebunStr,
@@ -503,27 +526,60 @@ export default function RealisasiTambah() {
           aplikasi: Number(toNumberLoose(aplikasiCell) || 1),
           dosis: dosisNum,
           kg_pupuk: kgPupukNum,
-        };
+        });
+      }
+
+      if (!payloads.length) {
+        Swal.fire({
+          title: "Tidak ada data",
+          text: "Tidak ada baris valid yang dapat diimport dari Excel.",
+          icon: "warning",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      // === KIRIM BULK DALAM CHUNK (untuk >500 baris) ===
+      const CHUNK_SIZE = 300;
+      let totalInserted = 0;
+      let totalSent = 0;
+
+      for (let i = 0; i < payloads.length; i += CHUNK_SIZE) {
+        const chunk = payloads.slice(i, i + CHUNK_SIZE);
+        totalSent += chunk.length;
 
         try {
           const res = await fetch("/api/pemupukan/realisasi", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(chunk), // <<< kirim ARRAY, bukan satu objek
           });
-          if (!res.ok) failed += 1;
-          else success += 1;
+
+          if (!res.ok) {
+            console.error("Bulk import error status:", res.status);
+            continue;
+          }
+
+          const json = await res.json().catch(() => null);
+          const insertedFromApi =
+            (json && (json.inserted as number)) ||
+            (json && (json.insertedCount as number)) ||
+            0;
+
+          totalInserted += insertedFromApi;
         } catch (err) {
-          console.error("Row import error:", err);
-          failed += 1;
+          console.error("Bulk chunk error:", err);
+          // kalau 1 chunk error, lanjut chunk berikutnya
         }
       }
 
+      const totalFailed = totalSent - totalInserted;
 
       Swal.fire({
         title: "Import selesai",
-        html: `Berhasil import <b>${success}</b> baris.<br/>Gagal import <b>${failed}</b> baris.`,
-        icon: success > 0 && failed === 0 ? "success" : "warning",
+        html: `Berhasil import <b>${totalInserted}</b> baris.<br/>Gagal / terlewat <b>${totalFailed}</b> baris.`,
+        icon:
+          totalInserted > 0 && totalFailed === 0 ? "success" : "warning",
         confirmButtonText: "OK",
       });
     } catch (err) {
@@ -877,7 +933,7 @@ export default function RealisasiTambah() {
               />
             </svg>
             <span className="text-sm text-slate-700">
-              Mengimport data dari Excel, mohon tunggu...
+              Mengimport data dari Excel (bulk), mohon tunggu...
             </span>
           </div>
         </div>

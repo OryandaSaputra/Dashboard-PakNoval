@@ -1,4 +1,4 @@
-// src/app/api/pemupukan/realisasi/route.ts
+// src/app/api/pemupukan/Rencana/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma, KategoriTanaman } from "@prisma/client";
@@ -105,7 +105,7 @@ function mapBodyToCreateInput(row: IncomingRow | null | undefined) {
 }
 
 /**
- * CREATE: Tambah data realisasi pemupukan
+ * CREATE: Tambah data Rencana pemupukan
  * - jika body = object  → create 1 row
  * - jika body = array   → createMany (bulk)
  */
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
         );
       }
 
-      const validData: Prisma.RealisasiPemupukanCreateManyInput[] = [];
+      const validData: Prisma.RencanaPemupukanCreateManyInput[] = [];
       let invalidCount = 0;
 
       for (const row of body as IncomingRow[]) {
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
         }
 
         validData.push(
-          mapped.data as Prisma.RealisasiPemupukanCreateManyInput
+          mapped.data as Prisma.RencanaPemupukanCreateManyInput
         );
       }
 
@@ -147,7 +147,7 @@ export async function POST(req: Request) {
         );
       }
 
-      const result = await prisma.realisasiPemupukan.createMany({
+      const result = await prisma.rencanaPemupukan.createMany({
         data: validData,
       });
 
@@ -176,15 +176,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const data = mapped.data as Prisma.RealisasiPemupukanCreateInput;
+    const data = mapped.data as Prisma.RencanaPemupukanCreateInput;
 
-    const created = await prisma.realisasiPemupukan.create({ data });
+    const created = await prisma.rencanaPemupukan.create({ data });
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
-    console.error("POST /api/pemupukan/realisasi error", err);
+    console.error("POST /api/pemupukan/rencana error", err);
     return NextResponse.json(
-      { message: "Terjadi kesalahan saat menyimpan realisasi." },
+      { message: "Terjadi kesalahan saat menyimpan rencana." },
       { status: 500 }
     );
   }
@@ -211,13 +211,13 @@ export async function GET(req: Request) {
         );
       }
 
-      const item = await prisma.realisasiPemupukan.findUnique({
+      const item = await prisma.rencanaPemupukan.findUnique({
         where: { id },
       });
 
       if (!item) {
         return NextResponse.json(
-          { message: "Data realisasi tidak ditemukan." },
+          { message: "Data rencana tidak ditemukan." },
           { status: 404 }
         );
       }
@@ -231,23 +231,23 @@ export async function GET(req: Request) {
         ? { kategori: kategori as KategoriTanaman }
         : {};
 
-    const data = await prisma.realisasiPemupukan.findMany({
+    const data = await prisma.rencanaPemupukan.findMany({
       where,
       orderBy: { tanggal: "desc" }, // tanggal null akan diurutkan belakangan/awal tergantung DB
     });
 
     return NextResponse.json(data);
   } catch (err) {
-    console.error("GET /api/pemupukan/realisasi error", err);
+    console.error("GET /api/pemupukan/rencana error", err);
     return NextResponse.json(
-      { message: "Terjadi kesalahan saat mengambil data realisasi." },
+      { message: "Terjadi kesalahan saat mengambil data rencana." },
       { status: 500 }
     );
   }
 }
 
 /**
- * UPDATE: Perbarui data realisasi
+ * UPDATE: Perbarui data Rencana
  * - butuh ?id= di query
  */
 export async function PUT(req: Request) {
@@ -279,18 +279,18 @@ export async function PUT(req: Request) {
       );
     }
 
-    const data = mapped.data as Prisma.RealisasiPemupukanUpdateInput;
+    const data = mapped.data as Prisma.RencanaPemupukanUpdateInput;
 
-    const updated = await prisma.realisasiPemupukan.update({
+    const updated = await prisma.rencanaPemupukan.update({
       where: { id },
       data,
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    console.error("PUT /api/pemupukan/realisasi error", err);
+    console.error("PUT /api/pemupukan/rencana error", err);
     return NextResponse.json(
-      { message: "Terjadi kesalahan saat memperbarui realisasi." },
+      { message: "Terjadi kesalahan saat memperbarui rencana." },
       { status: 500 }
     );
   }
@@ -299,7 +299,7 @@ export async function PUT(req: Request) {
 /**
  * DELETE:
  * - ?id=123   → hapus satu baris
- * - ?all=1    → hapus SEMUA data realisasi
+ * - ?all=1    → hapus SEMUA data Rencana
  */
 export async function DELETE(req: Request) {
   try {
@@ -309,10 +309,10 @@ export async function DELETE(req: Request) {
 
     // 🔥 HAPUS SEMUA DATA
     if (all === "1") {
-      const result = await prisma.realisasiPemupukan.deleteMany({});
+      const result = await prisma.rencanaPemupukan.deleteMany({});
       return NextResponse.json(
         {
-          message: "Semua data realisasi berhasil dihapus.",
+          message: "Semua data rencana berhasil dihapus.",
           deletedCount: result.count,
         },
         { status: 200 }
@@ -335,18 +335,18 @@ export async function DELETE(req: Request) {
       );
     }
 
-    await prisma.realisasiPemupukan.delete({
+    await prisma.rencanaPemupukan.delete({
       where: { id },
     });
 
     return NextResponse.json(
-      { message: "Data realisasi berhasil dihapus." },
+      { message: "Data rencana berhasil dihapus." },
       { status: 200 }
     );
   } catch (err) {
-    console.error("DELETE /api/pemupukan/realisasi error", err);
+    console.error("DELETE /api/pemupukan/rencana error", err);
     return NextResponse.json(
-      { message: "Terjadi kesalahan saat menghapus realisasi." },
+      { message: "Terjadi kesalahan saat menghapus rencana." },
       { status: 500 }
     );
   }

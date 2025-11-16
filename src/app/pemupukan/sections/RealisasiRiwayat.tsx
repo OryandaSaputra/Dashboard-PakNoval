@@ -16,7 +16,7 @@ type ApiRealisasi = {
   kategori: Kategori;
   kebun: string;
   kodeKebun: string;
-  tanggal: string; // ISO: "2020-04-10T00:00:00.000Z"
+  tanggal: string | null; // bisa null
   afd: string;
   tt: string;
   blok: string;
@@ -33,7 +33,7 @@ type ApiRealisasi = {
 // Bentuk data yang dipakai tabel
 type HistoryRow = {
   id: number;
-  tanggal: string; // "YYYY-MM-DD"
+  tanggal: string; // "YYYY-MM-DD" atau "-"
   kategori: Kategori;
   kebun: string;
   kodeKebun: string;
@@ -49,7 +49,7 @@ type HistoryRow = {
 };
 
 function parseDateValue(s: string): number {
-  if (!s) return 0;
+  if (!s || s === "-") return 0;
   const t = new Date(s).getTime();
   return Number.isFinite(t) ? t : 0;
 }
@@ -64,14 +64,13 @@ export default function RealisasiRiwayat() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const pageSize = 100;
   const router = useRouter();
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        // ambil langsung dari API realisasi (tanpa /history)
         const res = await fetch("/api/pemupukan/realisasi", {
           cache: "no-store",
         });
@@ -84,7 +83,7 @@ export default function RealisasiRiwayat() {
 
         const mapped: HistoryRow[] = data.map((r) => ({
           id: r.id,
-          tanggal: r.tanggal.slice(0, 10), // "2020-04-10"
+          tanggal: r.tanggal ? r.tanggal.slice(0, 10) : "-", // aman kalau null
           kategori: r.kategori,
           kebun: r.kebun,
           kodeKebun: r.kodeKebun,
@@ -143,7 +142,7 @@ export default function RealisasiRiwayat() {
     setPage(1);
   }, [q]);
 
-  // === ACTION: HAPUS DATA ===
+  // === ACTION: HAPUS SATU DATA ===
   const handleDelete = async (row: HistoryRow) => {
     const result = await Swal.fire({
       title: "Yakin ingin menghapus data ini?",
@@ -165,12 +164,9 @@ export default function RealisasiRiwayat() {
     if (!result.isConfirmed) return;
 
     try {
-      const res = await fetch(
-        `/api/pemupukan/realisasi?id=${row.id}`,
-        {
-          method: "DELETE",
-        }
-      );
+      const res = await fetch(`/api/pemupukan/realisasi?id=${row.id}`, {
+        method: "DELETE",
+      });
 
       if (!res.ok) {
         const text = await res.text();
@@ -186,7 +182,6 @@ export default function RealisasiRiwayat() {
         return;
       }
 
-      // Hapus dari state
       setRows((prev) => prev.filter((r) => r.id !== row.id));
 
       await Swal.fire({
@@ -206,10 +201,69 @@ export default function RealisasiRiwayat() {
     }
   };
 
+  // === ACTION: HAPUS SEMUA DATA ===
+  const handleDeleteAll = async () => {
+    if (rows.length === 0) return;
+
+    const result = await Swal.fire({
+      title: "Hapus semua data realisasi?",
+      html: `
+        <div style="text-align:left;font-size:12px">
+          Tindakan ini akan menghapus <b>semua</b> data realisasi pemupukan di database.<br/>
+          Data yang sudah dihapus <b>tidak dapat dikembalikan</b>.
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus semua",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch("/api/pemupukan/realisasi?all=1", {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Gagal hapus semua:", text);
+        await Swal.fire({
+          title: "Gagal menghapus semua",
+          text:
+            text ||
+            "Terjadi kesalahan saat menghapus semua data. Silakan coba lagi atau hubungi admin.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      setRows([]);
+      setPage(1);
+      setQ("");
+
+      await Swal.fire({
+        title: "Berhasil",
+        text: "Semua data realisasi berhasil dihapus.",
+        icon: "success",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        title: "Terjadi kesalahan",
+        text: "Tidak dapat menghapus semua data. Cek console atau hubungi admin.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
   // === ACTION: EDIT DATA ===
   const handleEdit = (row: HistoryRow) => {
-    // Sementara diarahkan ke halaman edit (nanti bisa kamu buat)
-    // misal: /pemupukan/realisasi/edit?id=...
     router.push(`/pemupukan/realisasi/edit?id=${row.id}`);
   };
 
@@ -222,18 +276,24 @@ export default function RealisasiRiwayat() {
 
       <Card className="bg-white/80 dark:bg-slate-900/60">
         <CardHeader className="pb-2">
-          <CardTitle className="text-[13px]">
-            Pencarian &amp; Tabel
-          </CardTitle>
+          <CardTitle className="text-[13px]">Pencarian &amp; Tabel</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Cari kategori (TM/TBM/BIBITAN) / kebun / AFD / blok / jenis pupuk / tanggal…"
               className="h-9 max-w-xl"
             />
+            <button
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={rows.length === 0 || loading}
+              className="ml-auto px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Hapus Semua Data
+            </button>
           </div>
 
           <div className="overflow-x-auto">
@@ -337,9 +397,7 @@ export default function RealisasiRiwayat() {
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
             <span>
               Menampilkan{" "}
-              {filtered.length === 0
-                ? 0
-                : (page - 1) * pageSize + 1}
+              {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}
               -
               {Math.min(page * pageSize, filtered.length)} dari{" "}
               {filtered.length}

@@ -19,7 +19,7 @@ model RencanaPemupukan {
   kategori        KategoriTanaman
   kebun           String
   kodeKebun       String
-  tanggal         DateTime         @db.Date
+  tanggal         DateTime?        @db.Date   // ✅ sekarang boleh null
   afd             String
   tt              String
   blok            String
@@ -34,12 +34,13 @@ model RencanaPemupukan {
   updatedAt       DateTime         @updatedAt
 }
 
+
 model RealisasiPemupukan {
   id              Int              @id @default(autoincrement())
   kategori        KategoriTanaman
   kebun           String
   kodeKebun       String
-  tanggal         DateTime         @db.Date
+  tanggal         DateTime?        @db.Date   // 🔹 sekarang boleh null
   afd             String
   tt              String
   blok            String

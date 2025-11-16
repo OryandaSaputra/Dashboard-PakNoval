@@ -5,30 +5,58 @@ import SectionHeader from "../components/SectionHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { KEBUN_LABEL } from "../constants";
+import Swal from "sweetalert2";
+import { useRouter } from "next/navigation";
 
-type HistoryRow = {
+type Kategori = "TM" | "TBM" | "BIBITAN";
+
+// Bentuk data asli dari API / Prisma
+type ApiRencana = {
+  id: number;
+  kategori: Kategori;
   kebun: string;
-  kodeKebun?: string;
-  tanggal: string;
+  kodeKebun: string;
+  tanggal: string | null; // bisa null
   afd: string;
-  tt?: string;
+  tt: string;
   blok: string;
-  luas?: number | string;
-  inv?: number | string;
+  luasHa: number;
+  inv: number;
   jenisPupuk: string;
-  aplikasi?: number | string;
-  dosis?: number | string;
-  kgPupuk?: number | string;
+  aplikasiKe: number;
+  dosisKgPerPokok: number;
+  kgPupuk: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Bentuk data yang dipakai tabel
+type HistoryRow = {
+  id: number;
+  tanggal: string; // "YYYY-MM-DD" atau "-"
+  kategori: Kategori;
+  kebun: string;
+  kodeKebun: string;
+  afd: string;
+  tt: string;
+  blok: string;
+  luas: number | null;
+  inv: number | null;
+  jenisPupuk: string;
+  aplikasi: number | null;
+  dosis: number | null;
+  kgPupuk: number | null;
 };
 
 function parseDateValue(s: string): number {
-  if (!s) return 0;
-  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) {
-    const [d, m, y] = s.split(".").map((x) => Number(x));
-    return new Date(y, m - 1, d).getTime();
-  }
+  if (!s || s === "-") return 0;
   const t = new Date(s).getTime();
   return Number.isFinite(t) ? t : 0;
+}
+
+function fmtNum(n: number | null | undefined) {
+  if (n == null) return "-";
+  return n.toLocaleString("id-ID");
 }
 
 export default function RencanaRiwayat() {
@@ -36,23 +64,51 @@ export default function RencanaRiwayat() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const pageSize = 100;
+  const router = useRouter();
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        // TODO: sesuaikan endpoint backend kamu
-        const res = await fetch("/api/pemupukan/rencana/history", { cache: "no-store" });
-        const data: HistoryRow[] = res.ok ? await res.json() : [];
-        if (active) setRows(Array.isArray(data) ? data : []);
-      } catch {
+        const res = await fetch("/api/pemupukan/rencana", {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          throw new Error("Gagal mengambil data rencana");
+        }
+        const data = (await res.json()) as ApiRencana[];
+
+        if (!active) return;
+
+        const mapped: HistoryRow[] = data.map((r) => ({
+          id: r.id,
+          tanggal: r.tanggal ? r.tanggal.slice(0, 10) : "-", // aman kalau null
+          kategori: r.kategori,
+          kebun: r.kebun,
+          kodeKebun: r.kodeKebun,
+          afd: r.afd,
+          tt: r.tt,
+          blok: r.blok,
+          luas: r.luasHa,
+          inv: r.inv,
+          jenisPupuk: r.jenisPupuk,
+          aplikasi: r.aplikasiKe,
+          dosis: r.dosisKgPerPokok,
+          kgPupuk: r.kgPupuk,
+        }));
+
+        setRows(mapped);
+      } catch (err) {
+        console.error(err);
         if (active) setRows([]);
       } finally {
         if (active) setLoading(false);
       }
     })();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -61,40 +117,191 @@ export default function RencanaRiwayat() {
       ? rows.filter((r) => {
         const keb = KEBUN_LABEL[r.kebun] ?? r.kebun ?? "";
         return [
-          keb, r.kodeKebun ?? "", r.afd ?? "", r.blok ?? "", r.jenisPupuk ?? "", r.tanggal ?? "",
-        ].some((v) => String(v).toLowerCase().includes(term));
+          r.kategori,
+          keb,
+          r.kodeKebun ?? "",
+          r.afd ?? "",
+          r.blok ?? "",
+          r.jenisPupuk ?? "",
+          r.tanggal ?? "",
+        ]
+          .map((v) => String(v).toLowerCase())
+          .some((v) => v.includes(term));
       })
       : rows;
 
-    return [...base].sort((a, b) => parseDateValue(b.tanggal) - parseDateValue(a.tanggal));
+    return [...base].sort(
+      (a, b) => parseDateValue(b.tanggal) - parseDateValue(a.tanggal)
+    );
   }, [rows, q]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  useEffect(() => { setPage(1); }, [q]);
+  useEffect(() => {
+    setPage(1);
+  }, [q]);
+
+  // === ACTION: HAPUS SATU DATA ===
+  const handleDelete = async (row: HistoryRow) => {
+    const result = await Swal.fire({
+      title: "Yakin ingin menghapus data ini?",
+      html: `
+        <div style="text-align:left;font-size:12px">
+          <b>Tanggal:</b> ${row.tanggal}<br/>
+          <b>Kategori:</b> ${row.kategori}<br/>
+          <b>Kebun:</b> ${KEBUN_LABEL[row.kebun] ?? row.kebun}<br/>
+          <b>Blok:</b> ${row.blok} | <b>AFD:</b> ${row.afd}
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`/api/pemupukan/rencana?id=${row.id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Gagal hapus:", text);
+        await Swal.fire({
+          title: "Gagal menghapus",
+          text:
+            text ||
+            "Terjadi kesalahan saat menghapus data. Silakan coba lagi atau hubungi admin.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+
+      await Swal.fire({
+        title: "Berhasil",
+        text: "Data rencana berhasil dihapus.",
+        icon: "success",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        title: "Terjadi kesalahan",
+        text: "Tidak dapat menghapus data. Cek console atau hubungi admin.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
+  // === ACTION: HAPUS SEMUA DATA ===
+  const handleDeleteAll = async () => {
+    if (rows.length === 0) return;
+
+    const result = await Swal.fire({
+      title: "Hapus semua data rencana?",
+      html: `
+        <div style="text-align:left;font-size:12px">
+          Tindakan ini akan menghapus <b>semua</b> data rencana pemupukan di database.<br/>
+          Data yang sudah dihapus <b>tidak dapat dikembalikan</b>.
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus semua",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch("/api/pemupukan/rencana?all=1", {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Gagal hapus semua:", text);
+        await Swal.fire({
+          title: "Gagal menghapus semua",
+          text:
+            text ||
+            "Terjadi kesalahan saat menghapus semua data. Silakan coba lagi atau hubungi admin.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      setRows([]);
+      setPage(1);
+      setQ("");
+
+      await Swal.fire({
+        title: "Berhasil",
+        text: "Semua data rencana berhasil dihapus.",
+        icon: "success",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        title: "Terjadi kesalahan",
+        text: "Tidak dapat menghapus semua data. Cek console atau hubungi admin.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
+  // === ACTION: EDIT DATA ===
+  const handleEdit = (row: HistoryRow) => {
+    router.push(`/pemupukan/rencana/edit?id=${row.id}`);
+  };
 
   return (
     <section className="space-y-2">
-      <SectionHeader title="Riwayat Rencana" desc="Daftar input rencana terbaru" />
+      <SectionHeader
+        title="Riwayat Rencana"
+        desc="Daftar input rencana terbaru dari database"
+      />
 
       <Card className="bg-white/80 dark:bg-slate-900/60">
         <CardHeader className="pb-2">
-          <CardTitle className="text-[13px]">Pencarian & Tabel</CardTitle>
+          <CardTitle className="text-[13px]">Pencarian &amp; Tabel</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Cari kebun / AFD / blok / jenis pupuk / tanggal…"
+              placeholder="Cari kategori (TM/TBM/BIBITAN) / kebun / AFD / blok / jenis pupuk / tanggal…"
               className="h-9 max-w-xl"
             />
+            <button
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={rows.length === 0 || loading}
+              className="ml-auto px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Hapus Semua Data
+            </button>
           </div>
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs">
               <thead className="bg-slate-100 dark:bg-slate-800/40">
                 <tr>
+                  <th className="px-3 py-2 text-left">Tanggal</th>
+                  <th className="px-3 py-2 text-left">Kategori</th>
                   <th className="px-3 py-2 text-left">Kebun</th>
                   <th className="px-3 py-2 text-left">Kode Kebun</th>
                   <th className="px-3 py-2 text-left">AFD</th>
@@ -104,41 +311,112 @@ export default function RencanaRiwayat() {
                   <th className="px-3 py-2 text-right">INV</th>
                   <th className="px-3 py-2 text-left">Jenis Pupuk</th>
                   <th className="px-3 py-2 text-right">Aplikasi</th>
-                  <th className="px-3 py-2 text-right">Dosis</th>
+                  <th className="px-3 py-2 text-right">Dosis (Kg/pokok)</th>
                   <th className="px-3 py-2 text-right">Kg Pupuk</th>
+                  <th className="px-3 py-2 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((r, i) => (
-                  <tr key={`${r.kebun}-${r.kodeKebun}-${r.tanggal}-${i}`} className="border-t border-slate-100 dark:border-slate-800">
-                    <td className="px-3 py-2">{KEBUN_LABEL[r.kebun] ?? r.kebun}</td>
-                    <td className="px-3 py-2">{r.kodeKebun ?? "-"}</td>
+                  <tr
+                    key={`${r.id}-${r.kebun}-${r.kodeKebun}-${r.tanggal}-${i}`}
+                    className="border-t border-slate-100 dark:border-slate-800"
+                  >
+                    <td className="px-3 py-2">{r.tanggal}</td>
+                    <td className="px-3 py-2">{r.kategori}</td>
+                    <td className="px-3 py-2">
+                      {KEBUN_LABEL[r.kebun] ?? r.kebun}
+                    </td>
+                    <td className="px-3 py-2">{r.kodeKebun || "-"}</td>
                     <td className="px-3 py-2">{r.afd}</td>
-                    <td className="px-3 py-2">{r.tt ?? "-"}</td>
+                    <td className="px-3 py-2">{r.tt || "-"}</td>
                     <td className="px-3 py-2">{r.blok}</td>
-                    <td className="px-3 py-2 text-right">{r.luas ?? "-"}</td>
-                    <td className="px-3 py-2 text-right">{r.inv ?? "-"}</td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtNum(r.luas)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtNum(r.inv)}
+                    </td>
                     <td className="px-3 py-2">{r.jenisPupuk}</td>
-                    <td className="px-3 py-2 text-right">{r.aplikasi ?? "-"}</td>
-                    <td className="px-3 py-2 text-right">{r.dosis ?? "-"}</td>
-                    <td className="px-3 py-2 text-right">{r.kgPupuk ?? "-"}</td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtNum(r.aplikasi)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtNum(r.dosis)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtNum(r.kgPupuk)}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="inline-flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(r)}
+                          className="px-2 py-1 rounded border border-slate-300 text-[11px] hover:bg-slate-100"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(r)}
+                          className="px-2 py-1 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
+
                 {!loading && pageRows.length === 0 && (
-                  <tr><td colSpan={12} className="px-3 py-6 text-center text-slate-500">Tidak ada data.</td></tr>
+                  <tr>
+                    <td
+                      colSpan={14}
+                      className="px-3 py-6 text-center text-slate-500"
+                    >
+                      Tidak ada data.
+                    </td>
+                  </tr>
                 )}
+
                 {loading && (
-                  <tr><td colSpan={12} className="px-3 py-6 text-center text-slate-500">Memuat data…</td></tr>
+                  <tr>
+                    <td
+                      colSpan={14}
+                      className="px-3 py-6 text-center text-slate-500"
+                    >
+                      Memuat data…
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
           </div>
 
+          {/* Pagination sederhana */}
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
-            <span>Menampilkan {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filtered.length)} dari {filtered.length}</span>
+            <span>
+              Menampilkan{" "}
+              {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}
+              -
+              {Math.min(page * pageSize, filtered.length)} dari{" "}
+              {filtered.length}
+            </span>
             <div className="flex gap-2">
-              <button disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 disabled:opacity-50">Prev</button>
-              <button disabled={page === Math.max(1, Math.ceil(filtered.length / pageSize))} onClick={() => setPage((p) => p + 1)} className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 disabled:opacity-50">Next</button>
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <button
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 disabled:opacity-50"
+              >
+                Next
+              </button>
             </div>
           </div>
         </CardContent>
