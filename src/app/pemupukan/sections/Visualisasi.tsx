@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import { COLOR_PLAN, COLOR_REAL } from "../constants";
 import React, { useMemo } from "react";
+import jsPDF from "jspdf";
+import autoTable, { RowInput } from "jspdf-autotable";
 
 type KebunRow = {
   kebun: string;
@@ -18,6 +20,7 @@ type KebunRow = {
   realisasi: number;
   progress: number;
 };
+
 type AggPupukRow = {
   jenis: string;
   rencana: number;
@@ -26,6 +29,7 @@ type AggPupukRow = {
   realisasi_ha: number;
   progress: number;
 };
+
 type StokSisaRow = {
   distrik: string;
   stok: number;
@@ -53,7 +57,7 @@ export type TmRow = {
   // Harian (Kg)
   renc_selasa: number; // Rencana Hari Ini
   real_selasa: number; // Realisasi Hari Ini
-  renc_rabu: number;   // Rencana Besok
+  renc_rabu: number; // Rencana Besok
   // Jumlah
   jumlah_rencana2025: number;
   jumlah_realSd0710: number; // Real 5 hari terakhir (total)
@@ -69,17 +73,20 @@ function todayISOJakarta(base = new Date()): string {
     day: "2-digit",
   }).format(base);
 }
+
 function addDaysJakarta(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00+07:00`);
   d.setDate(d.getDate() + n);
   return todayISOJakarta(d);
 }
+
 function isoToShort(iso?: string) {
   if (!iso) return "-";
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return "-";
   return `${d}/${m}/${y}`;
 }
+
 function isoToLongID(iso?: string) {
   if (!iso) return "-";
   const d = new Date(`${iso}T00:00:00+07:00`);
@@ -136,6 +143,8 @@ function computeTotals(rows?: TmRow[] | null) {
   };
 }
 
+type Totals = ReturnType<typeof computeTotals> | null;
+
 /** Warna sel persen: hijau kalau >=100%, merah kalau <100% */
 const pctClass = (n?: number | null) => {
   if (n == null || Number.isNaN(n)) return "";
@@ -144,6 +153,204 @@ const pctClass = (n?: number | null) => {
     ? "text-emerald-700 font-semibold"
     : "text-red-600 font-semibold";
 };
+
+/** Tipe cell untuk body AutoTable (tanpa any) */
+type PdfCell =
+  | string
+  | number
+  | {
+    content: string | number;
+    colSpan?: number;
+  };
+
+/** Helper: export tabel pemupukan ke PDF dari data
+ *  Header dibuat 2 baris supaya mirip dengan tabel web
+ */
+function exportPemupukanTablePdf(
+  label: string, // "TM", "TBM", "TM & TBM"
+  rows: TmRow[],
+  totals: Totals,
+  meta: {
+    todayShort: string;
+    tomorrowShort: string;
+    startLong: string;
+    endLong: string;
+    filename: string;
+  }
+) {
+  if (!rows.length) {
+    alert(`Tidak ada data ${label} untuk diexport.`);
+    return;
+  }
+
+  const doc = new jsPDF("l", "mm", "a4");
+
+  // ===== Judul & info tanggal =====
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(12);
+  doc.text(`Tabel Rencana & Realisasi Pemupukan ${label}`, 14, 10);
+
+  doc.setFontSize(9);
+  doc.text(
+    `Rencana Hari Ini: ${meta.todayShort} | Rencana Besok: ${meta.tomorrowShort}`,
+    14,
+    16
+  );
+  doc.text(
+    `Real 5 Hari Terakhir: ${meta.startLong} – ${meta.endLong}`,
+    14,
+    21
+  );
+
+  const fmtNum = (n?: number | null) =>
+    n == null ? "-" : n.toLocaleString("id-ID");
+  const fmtPct = (n?: number | null) =>
+    n == null
+      ? "-"
+      : n.toLocaleString("id-ID", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+  // ===== HEADER: 2 baris, meniru struktur tabel web =====
+  const head: RowInput[] = [
+    [
+      "No.",
+      "Kebun",
+      { content: "APLIKASI - I", colSpan: 3 },
+      { content: "APLIKASI - II", colSpan: 3 },
+      { content: "APLIKASI - III", colSpan: 3 },
+      { content: `Rencana Hari Ini\n${meta.todayShort}\n(Kg)` },
+      { content: `Realisasi Hari Ini\n${meta.todayShort}\n(Kg)` },
+      { content: `Rencana Besok\n${meta.tomorrowShort}\n(Kg)` },
+      { content: "Jumlah", colSpan: 3 },
+    ],
+    [
+      "",
+      "",
+      "RENCANA",
+      `Real 5 Hari Terakhir\n${meta.startLong} – ${meta.endLong}`,
+      "%",
+      "RENCANA",
+      `Real 5 Hari Terakhir\n${meta.startLong} – ${meta.endLong}`,
+      "%",
+      "RENCANA",
+      `Real 5 Hari Terakhir\n${meta.startLong} – ${meta.endLong}`,
+      "%",
+      "",
+      "",
+      "",
+      "Rencana (Total)",
+      `Real 5 Hari Terakhir\n${meta.startLong} – ${meta.endLong}`,
+      "%",
+    ],
+  ];
+
+  const body: PdfCell[][] = rows.map((r, idx) => [
+    r.no ?? idx + 1,
+    r.kebun,
+    fmtNum(r.app1_rencana),
+    fmtNum(r.app1_real),
+    fmtPct(r.app1_pct),
+    fmtNum(r.app2_rencana),
+    fmtNum(r.app2_real),
+    fmtPct(r.app2_pct),
+    fmtNum(r.app3_rencana),
+    fmtNum(r.app3_real),
+    fmtPct(r.app3_pct),
+    fmtNum(r.renc_selasa),
+    fmtNum(r.real_selasa),
+    fmtNum(r.renc_rabu),
+    fmtNum(r.jumlah_rencana2025),
+    fmtNum(r.jumlah_realSd0710),
+    fmtPct(r.jumlah_pct),
+  ]);
+
+  if (totals) {
+    const totalRow: PdfCell[] = [
+      { content: `Jumlah ${label}`, colSpan: 2 },
+      fmtNum(totals.app1_rencana),
+      fmtNum(totals.app1_real),
+      fmtPct(totals.app1_pct),
+      fmtNum(totals.app2_rencana),
+      fmtNum(totals.app2_real),
+      fmtPct(totals.app2_pct),
+      fmtNum(totals.app3_rencana),
+      fmtNum(totals.app3_real),
+      fmtPct(totals.app3_pct),
+      fmtNum(totals.renc_today),
+      fmtNum(totals.real_today),
+      fmtNum(totals.renc_tomorrow),
+      fmtNum(totals.jumlah_rencana2025),
+      fmtNum(totals.jumlah_real5),
+      fmtPct(totals.jumlah_pct),
+    ];
+    body.push(totalRow);
+  }
+
+  autoTable(doc, {
+    head,
+    body: body as RowInput[],
+    startY: 26,
+    theme: "grid",
+    styles: {
+      fontSize: 7,
+      textColor: [15, 23, 42],
+      lineColor: [148, 163, 184],
+      lineWidth: 0.1,
+    },
+    headStyles: {
+      fillColor: [22, 101, 52], // hijau tua
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+    },
+    alternateRowStyles: {
+      fillColor: [240, 253, 244], // hijau muda
+    },
+    columnStyles: {
+      0: { halign: "center" }, // No.
+      // sisanya rata kiri supaya mirip tabel web
+      1: { halign: "left" },
+      2: { halign: "left" },
+      3: { halign: "left" },
+      4: { halign: "left" },
+      5: { halign: "left" },
+      6: { halign: "left" },
+      7: { halign: "left" },
+      8: { halign: "left" },
+      9: { halign: "left" },
+      10: { halign: "left" },
+      11: { halign: "left" },
+      12: { halign: "left" },
+      13: { halign: "left" },
+      14: { halign: "left" },
+      15: { halign: "left" },
+      16: { halign: "left" },
+    },
+    // Watermark sangat samar di pojok kanan bawah
+    didDrawPage: () => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // super halus: kecil & hampir putih
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(245, 245, 245); // nyaris putih
+
+      doc.text("Bagian Tanaman", pageWidth - 6, pageHeight - 4, {
+        align: "right",
+      });
+
+      // kembalikan warna font jika nanti ada teks lain
+      doc.setTextColor(0, 0, 0);
+    },
+  });
+
+  doc.save(meta.filename);
+}
 
 export default function Visualisasi({
   aggPupuk,
@@ -211,7 +418,7 @@ export default function Visualisasi({
       <div className="grid grid-cols-12 gap-3">
         <div className="col-span-12">
           <ChartCard title="Rencana vs Realisasi per Jenis Pupuk (Kg)">
-            <div className="pb-1">
+            <div className="pb-4">
               <p className="text-[11px] text-slate-500 mb-2">
                 Setiap pie chart merepresentasikan komposisi Rencana (Kg) vs
                 Realisasi (Kg) untuk satu jenis pupuk. Angka Ha ditampilkan di
@@ -235,14 +442,14 @@ export default function Visualisasi({
                   return (
                     <div
                       key={item.jenis}
-                      className="border border-slate-200 rounded-lg px-1 pt-1 pb-1 flex flex-col items-center bg-white"
+                      className="border border-slate-200 rounded-lg px-2 pt-2 pb-3 flex flex-col items-center bg-white"
                     >
                       <div className="text-[10px] font-semibold mb-0.5 text-center">
                         {item.jenis}
                       </div>
 
                       {/* pie kecil supaya total tinggi card tidak berlebih */}
-                      <div className="w-full h-16">
+                      <div className="w-full h-24">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -254,7 +461,6 @@ export default function Visualisasi({
                               labelLine={false}
                               isAnimationActive={false}
                             >
-                              {/* tidak ada label persen di dalam pie */}
                               <Cell fill={COLOR_PLAN} />
                               <Cell fill={COLOR_REAL} />
                             </Pie>
@@ -302,9 +508,27 @@ export default function Visualisasi({
       <div className="space-y-4">
         {/* === Tabel TM === */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <h3 className="text-sm font-semibold mb-3">
-            Tabel Rencana &amp; Realisasi Pemupukan TM
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">
+              Tabel Rencana &amp; Realisasi Pemupukan TM
+            </h3>
+            <button
+              type="button"
+              onClick={() =>
+                exportPemupukanTablePdf("TM", tmRows, totalsTM, {
+                  todayShort,
+                  tomorrowShort,
+                  startLong,
+                  endLong,
+                  filename: "Tabel_TM.pdf",
+                })
+              }
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Download PDF
+            </button>
+          </div>
+
           <div className="overflow-auto rounded-lg border border-slate-300">
             <table className="w-full text-xs border-collapse">
               <thead className="text-[11px]">
@@ -312,7 +536,7 @@ export default function Visualisasi({
                   <th rowSpan={2} className="border px-2 py-2 text-center">
                     No.
                   </th>
-                  <th rowSpan={2} className="border px-2 py-2 text-center">
+                  <th rowSpan={2} className="border px-2 py-2 text-left">
                     Kebun
                   </th>
                   <th colSpan={3} className="border px-2 py-2 text-center">
@@ -350,36 +574,36 @@ export default function Visualisasi({
                   </th>
                 </tr>
                 <tr className="bg-slate-100 text-slate-700">
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">
                     Rencana (Total)
                   </th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-left">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -401,63 +625,63 @@ export default function Visualisasi({
                       <td className="border px-2 py-1 text-center">
                         {r.no ?? idx + 1}
                       </td>
-                      <td className="border px-2 py-1">{r.kebun}</td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">{r.kebun}</td>
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app1_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app1_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app1_pct
                         )}`}
                       >
                         {fmtPct(r.app1_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app2_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app2_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app2_pct
                         )}`}
                       >
                         {fmtPct(r.app2_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app3_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app3_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app3_pct
                         )}`}
                       >
                         {fmtPct(r.app3_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.renc_selasa)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.real_selasa)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.renc_rabu)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.jumlah_rencana2025)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.jumlah_realSd0710)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.jumlah_pct
                         )}`}
                       >
@@ -473,62 +697,62 @@ export default function Visualisasi({
                     <td colSpan={2} className="border px-2 py-2 text-center">
                       Jumlah TM
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.app1_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.app1_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTM.app1_pct
                       )}`}
                     >
                       {fmtPct(totalsTM.app1_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.app2_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.app2_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTM.app2_pct
                       )}`}
                     >
                       {fmtPct(totalsTM.app2_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.app3_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.app3_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTM.app3_pct
                       )}`}
                     >
                       {fmtPct(totalsTM.app3_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.renc_today)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.real_today)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.renc_tomorrow)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.jumlah_rencana2025)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTM.jumlah_real5)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTM.jumlah_pct
                       )}`}
                     >
@@ -543,9 +767,27 @@ export default function Visualisasi({
 
         {/* === Tabel TBM === */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <h3 className="text-sm font-semibold mb-3">
-            Tabel Rencana &amp; Realisasi Pemupukan TBM
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">
+              Tabel Rencana &amp; Realisasi Pemupukan TBM
+            </h3>
+            <button
+              type="button"
+              onClick={() =>
+                exportPemupukanTablePdf("TBM", tbmRows, totalsTBM, {
+                  todayShort,
+                  tomorrowShort,
+                  startLong,
+                  endLong,
+                  filename: "Tabel_TBM.pdf",
+                })
+              }
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Download PDF
+            </button>
+          </div>
+
           <div className="overflow-auto rounded-lg border border-slate-300">
             <table className="w-full text-xs border-collapse">
               <thead className="text-[11px]">
@@ -553,7 +795,7 @@ export default function Visualisasi({
                   <th rowSpan={2} className="border px-2 py-2 text-center">
                     No.
                   </th>
-                  <th rowSpan={2} className="border px-2 py-2 text-center">
+                  <th rowSpan={2} className="border px-2 py-2 text-left">
                     Kebun
                   </th>
                   <th colSpan={3} className="border px-2 py-2 text-center">
@@ -591,36 +833,36 @@ export default function Visualisasi({
                   </th>
                 </tr>
                 <tr className="bg-slate-100 text-slate-700">
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">
                     Rencana (Total)
                   </th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-left">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -642,63 +884,63 @@ export default function Visualisasi({
                       <td className="border px-2 py-1 text-center">
                         {r.no ?? idx + 1}
                       </td>
-                      <td className="border px-2 py-1">{r.kebun}</td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">{r.kebun}</td>
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app1_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app1_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app1_pct
                         )}`}
                       >
                         {fmtPct(r.app1_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app2_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app2_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app2_pct
                         )}`}
                       >
                         {fmtPct(r.app2_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app3_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app3_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app3_pct
                         )}`}
                       >
                         {fmtPct(r.app3_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.renc_selasa)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.real_selasa)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.renc_rabu)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.jumlah_rencana2025)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.jumlah_realSd0710)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.jumlah_pct
                         )}`}
                       >
@@ -714,62 +956,62 @@ export default function Visualisasi({
                     <td colSpan={2} className="border px-2 py-2 text-center">
                       Jumlah TBM
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.app1_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.app1_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTBM.app1_pct
                       )}`}
                     >
                       {fmtPct(totalsTBM.app1_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.app2_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.app2_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTBM.app2_pct
                       )}`}
                     >
                       {fmtPct(totalsTBM.app2_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.app3_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.app3_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTBM.app3_pct
                       )}`}
                     >
                       {fmtPct(totalsTBM.app3_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.renc_today)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.real_today)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.renc_tomorrow)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.jumlah_rencana2025)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTBM.jumlah_real5)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTBM.jumlah_pct
                       )}`}
                     >
@@ -784,9 +1026,27 @@ export default function Visualisasi({
 
         {/* === Tabel TM & TBM === */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <h3 className="text-sm font-semibold mb-3">
-            Tabel Rencana &amp; Realisasi Pemupukan TM &amp; TBM
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">
+              Tabel Rencana &amp; Realisasi Pemupukan TM &amp; TBM
+            </h3>
+            <button
+              type="button"
+              onClick={() =>
+                exportPemupukanTablePdf("TM & TBM", tmTbmRows, totalsTmTbm, {
+                  todayShort,
+                  tomorrowShort,
+                  startLong,
+                  endLong,
+                  filename: "Tabel_TM_TBM.pdf",
+                })
+              }
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Download PDF
+            </button>
+          </div>
+
           <div className="overflow-auto rounded-lg border border-slate-300">
             <table className="w-full text-xs border-collapse">
               <thead className="text-[11px]">
@@ -794,7 +1054,7 @@ export default function Visualisasi({
                   <th rowSpan={2} className="border px-2 py-2 text-center">
                     No.
                   </th>
-                  <th rowSpan={2} className="border px-2 py-2 text-center">
+                  <th rowSpan={2} className="border px-2 py-2 text-left">
                     Kebun
                   </th>
                   <th colSpan={3} className="border px-2 py-2 text-center">
@@ -832,36 +1092,36 @@ export default function Visualisasi({
                   </th>
                 </tr>
                 <tr className="bg-slate-100 text-slate-700">
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">RENCANA</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">RENCANA</th>
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">%</th>
+                  <th className="border px-2 py-2 text-left">
                     Rencana (Total)
                   </th>
-                  <th className="border px-2 py-2 text-center">
+                  <th className="border px-2 py-2 text-left">
                     Real 5 Hari Terakhir
                     <br />
                     {startLong} – {endLong}
                   </th>
-                  <th className="border px-2 py-2 text-center">%</th>
+                  <th className="border px-2 py-2 text-left">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -883,63 +1143,63 @@ export default function Visualisasi({
                       <td className="border px-2 py-1 text-center">
                         {r.no ?? idx + 1}
                       </td>
-                      <td className="border px-2 py-1">{r.kebun}</td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">{r.kebun}</td>
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app1_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app1_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app1_pct
                         )}`}
                       >
                         {fmtPct(r.app1_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app2_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app2_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app2_pct
                         )}`}
                       >
                         {fmtPct(r.app2_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app3_rencana)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.app3_real)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.app3_pct
                         )}`}
                       >
                         {fmtPct(r.app3_pct)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.renc_selasa)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.real_selasa)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.renc_rabu)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.jumlah_rencana2025)}
                       </td>
-                      <td className="border px-2 py-1 text-right">
+                      <td className="border px-2 py-1 text-left">
                         {fmtNum(r.jumlah_realSd0710)}
                       </td>
                       <td
-                        className={`border px-2 py-1 text-right ${pctClass(
+                        className={`border px-2 py-1 text-left ${pctClass(
                           r.jumlah_pct
                         )}`}
                       >
@@ -955,62 +1215,62 @@ export default function Visualisasi({
                     <td colSpan={2} className="border px-2 py-2 text-center">
                       Jumlah TM &amp; TBM
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.app1_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.app1_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTmTbm.app1_pct
                       )}`}
                     >
                       {fmtPct(totalsTmTbm.app1_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.app2_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.app2_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTmTbm.app2_pct
                       )}`}
                     >
                       {fmtPct(totalsTmTbm.app2_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.app3_rencana)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.app3_real)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTmTbm.app3_pct
                       )}`}
                     >
                       {fmtPct(totalsTmTbm.app3_pct)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.renc_today)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.real_today)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.renc_tomorrow)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.jumlah_rencana2025)}
                     </td>
-                    <td className="border px-2 py-2 text-right">
+                    <td className="border px-2 py-2 text-left">
                       {fmtNum(totalsTmTbm.jumlah_real5)}
                     </td>
                     <td
-                      className={`border px-2 py-2 text-right ${pctClass(
+                      className={`border px-2 py-2 text-left ${pctClass(
                         totalsTmTbm.jumlah_pct
                       )}`}
                     >

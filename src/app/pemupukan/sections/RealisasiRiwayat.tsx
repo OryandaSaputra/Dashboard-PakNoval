@@ -59,6 +59,18 @@ function fmtNum(n: number | null | undefined) {
   return n.toLocaleString("id-ID");
 }
 
+// 🔧 Helper: konversi ISO dari server → "YYYY-MM-DD" LOKAL
+function toLocalYmd(value: string | null): string {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function RealisasiRiwayat() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +78,17 @@ export default function RealisasiRiwayat() {
   const [page, setPage] = useState(1);
   const pageSize = 100;
   const router = useRouter();
+
+  // 🔽 opsi kebun (code + label) untuk select hapus per kebun
+  const kebunOptions = useMemo(
+    () =>
+      Object.keys(KEBUN_LABEL).map((code) => ({
+        code,
+        name: KEBUN_LABEL[code] ?? code,
+      })),
+    []
+  );
+  const [selectedKebun, setSelectedKebun] = useState<string>("");
 
   useEffect(() => {
     let active = true;
@@ -83,7 +106,7 @@ export default function RealisasiRiwayat() {
 
         const mapped: HistoryRow[] = data.map((r) => ({
           id: r.id,
-          tanggal: r.tanggal ? r.tanggal.slice(0, 10) : "-", // aman kalau null
+          tanggal: toLocalYmd(r.tanggal),
           kategori: r.kategori,
           kebun: r.kebun,
           kodeKebun: r.kodeKebun,
@@ -262,6 +285,83 @@ export default function RealisasiRiwayat() {
     }
   };
 
+  // === ACTION: HAPUS SEMUA DATA PER KEBUN ===
+  const handleDeleteByKebun = async () => {
+    if (!selectedKebun) {
+      await Swal.fire({
+        title: "Kebun belum dipilih",
+        text: "Silakan pilih kebun yang akan dihapus datanya.",
+        icon: "warning",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const label = KEBUN_LABEL[selectedKebun] ?? selectedKebun;
+
+    const result = await Swal.fire({
+      title: "Hapus semua data realisasi untuk kebun ini?",
+      html: `
+        <div style="text-align:left;font-size:12px">
+          Kebun: <b>${label}</b> (${selectedKebun})<br/>
+          Tindakan ini akan menghapus <b>semua</b> data realisasi dengan kode kebun tersebut.<br/>
+          Data yang sudah dihapus <b>tidak dapat dikembalikan</b>.
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus kebun ini",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(
+        `/api/pemupukan/realisasi?kebun=${encodeURIComponent(selectedKebun)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Gagal hapus per kebun:", text);
+        await Swal.fire({
+          title: "Gagal menghapus data kebun",
+          text:
+            text ||
+            "Terjadi kesalahan saat menghapus data per kebun. Silakan coba lagi atau hubungi admin.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      const json = await res.json().catch(() => null);
+      const deletedCount = json?.deletedCount ?? 0;
+
+      // Hapus dari state lokal
+      setRows((prev) => prev.filter((r) => r.kebun !== selectedKebun));
+
+      await Swal.fire({
+        title: "Berhasil",
+        html: `Data realisasi untuk kebun <b>${label}</b> berhasil dihapus.<br/>Baris terhapus: <b>${deletedCount}</b>.`,
+        icon: "success",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        title: "Terjadi kesalahan",
+        text: "Tidak dapat menghapus data per kebun. Cek console atau hubungi admin.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
   // === ACTION: EDIT DATA ===
   const handleEdit = (row: HistoryRow) => {
     router.push(`/pemupukan/realisasi/edit?id=${row.id}`);
@@ -286,6 +386,30 @@ export default function RealisasiRiwayat() {
               placeholder="Cari kategori (TM/TBM/BIBITAN) / kebun / AFD / blok / jenis pupuk / tanggal…"
               className="h-9 max-w-xl"
             />
+
+            {/* Select kebun untuk hapus per kebun */}
+            <select
+              value={selectedKebun}
+              onChange={(e) => setSelectedKebun(e.target.value)}
+              className="h-9 px-2 text-[11px] border border-slate-300 rounded bg-white dark:bg-slate-900"
+            >
+              <option value="">Pilih kebun…</option>
+              {kebunOptions.map((o) => (
+                <option key={o.code} value={o.code}>
+                  {o.name} ({o.code})
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={handleDeleteByKebun}
+              disabled={!selectedKebun || loading}
+              className="px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Hapus Data per Kebun
+            </button>
+
             <button
               type="button"
               onClick={handleDeleteAll}

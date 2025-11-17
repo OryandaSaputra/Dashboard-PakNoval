@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/input";
 import { KEBUN_LABEL } from "../constants";
 import Swal from "sweetalert2";
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 type Kategori = "TM" | "TBM" | "BIBITAN";
 
@@ -59,6 +66,18 @@ function fmtNum(n: number | null | undefined) {
   return n.toLocaleString("id-ID");
 }
 
+// 🔧 Helper: konversi ISO dari server → "YYYY-MM-DD" lokal
+function toLocalYmd(value: string | null): string {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function RencanaRiwayat() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +85,9 @@ export default function RencanaRiwayat() {
   const [page, setPage] = useState(1);
   const pageSize = 100;
   const router = useRouter();
+
+  // kebun yang dipilih untuk dihapus (per kebun)
+  const [deleteKebun, setDeleteKebun] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -83,7 +105,7 @@ export default function RencanaRiwayat() {
 
         const mapped: HistoryRow[] = data.map((r) => ({
           id: r.id,
-          tanggal: r.tanggal ? r.tanggal.slice(0, 10) : "-", // aman kalau null
+          tanggal: toLocalYmd(r.tanggal),
           kategori: r.kategori,
           kebun: r.kebun,
           kodeKebun: r.kodeKebun,
@@ -141,6 +163,15 @@ export default function RencanaRiwayat() {
   useEffect(() => {
     setPage(1);
   }, [q]);
+
+  // daftar kebun unik (untuk Select hapus per kebun)
+  const kebunList = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.kebun) set.add(r.kebun);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
 
   // === ACTION: HAPUS SATU DATA ===
   const handleDelete = async (row: HistoryRow) => {
@@ -244,6 +275,7 @@ export default function RencanaRiwayat() {
       setRows([]);
       setPage(1);
       setQ("");
+      setDeleteKebun("");
 
       await Swal.fire({
         title: "Berhasil",
@@ -256,6 +288,94 @@ export default function RencanaRiwayat() {
       await Swal.fire({
         title: "Terjadi kesalahan",
         text: "Tidak dapat menghapus semua data. Cek console atau hubungi admin.",
+        icon: "error",
+        confirmButtonText: "OK",
+      });
+    }
+  };
+
+  // === ACTION: HAPUS BERDASARKAN KEBUN ===
+  const handleDeleteByKebun = async () => {
+    if (!deleteKebun) {
+      await Swal.fire({
+        title: "Belum memilih kebun",
+        text: "Silakan pilih kebun yang ingin dihapus datanya.",
+        icon: "info",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const label = KEBUN_LABEL[deleteKebun] ?? deleteKebun;
+    const affected = rows.filter((r) => r.kebun === deleteKebun).length;
+
+    if (affected === 0) {
+      await Swal.fire({
+        title: "Tidak ada data",
+        text: `Tidak ditemukan data rencana untuk kebun ${label}.`,
+        icon: "info",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: "Hapus data per kebun?",
+      html: `
+        <div style="text-align:left;font-size:12px">
+          Kebun: <b>${label}</b> (${deleteKebun})<br/>
+          Jumlah baris data: <b>${affected}</b><br/><br/>
+          Tindakan ini akan menghapus semua data rencana untuk kebun tersebut.<br/>
+          Data yang sudah dihapus <b>tidak dapat dikembalikan</b>.
+        </div>
+      `,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Ya, hapus data kebun ini",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(
+        `/api/pemupukan/rencana?kebun=${encodeURIComponent(deleteKebun)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Gagal hapus per kebun:", text);
+        await Swal.fire({
+          title: "Gagal menghapus data kebun",
+          text:
+            text ||
+            "Terjadi kesalahan saat menghapus data per kebun. Silakan coba lagi atau hubungi admin.",
+          icon: "error",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
+
+      // hapus dari state
+      setRows((prev) => prev.filter((r) => r.kebun !== deleteKebun));
+      setDeleteKebun("");
+
+      await Swal.fire({
+        title: "Berhasil",
+        text: `Semua data rencana untuk kebun ${label} berhasil dihapus.`,
+        icon: "success",
+        confirmButtonText: "OK",
+      });
+    } catch (err) {
+      console.error(err);
+      await Swal.fire({
+        title: "Terjadi kesalahan",
+        text:
+          "Tidak dapat menghapus data per kebun. Cek console atau hubungi admin.",
         icon: "error",
         confirmButtonText: "OK",
       });
@@ -286,14 +406,46 @@ export default function RencanaRiwayat() {
               placeholder="Cari kategori (TM/TBM/BIBITAN) / kebun / AFD / blok / jenis pupuk / tanggal…"
               className="h-9 max-w-xl"
             />
-            <button
-              type="button"
-              onClick={handleDeleteAll}
-              disabled={rows.length === 0 || loading}
-              className="ml-auto px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
-            >
-              Hapus Semua Data
-            </button>
+
+            <div className="ml-auto flex items-center gap-2">
+              {/* Pilih kebun yang akan dihapus */}
+              <Select
+                value={deleteKebun}
+                onValueChange={(v) => setDeleteKebun(v)}
+                disabled={kebunList.length === 0 || loading}
+              >
+                <SelectTrigger className="h-9 w-[220px]">
+                  <SelectValue placeholder="Pilih kebun untuk dihapus" />
+                </SelectTrigger>
+                <SelectContent>
+                  {kebunList.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {(KEBUN_LABEL[code] ?? code) + ` (${code})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <button
+                type="button"
+                onClick={handleDeleteByKebun}
+                disabled={
+                  !deleteKebun || loading || rows.length === 0
+                }
+                className="px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                Hapus per Kebun
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAll}
+                disabled={rows.length === 0 || loading}
+                className="px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                Hapus Semua Data
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">

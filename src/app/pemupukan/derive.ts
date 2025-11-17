@@ -1,3 +1,4 @@
+// src/app/pemupukan/derive.ts
 import { useMemo, useCallback } from "react";
 import {
   KEBUN_LABEL,
@@ -55,6 +56,24 @@ export type TmTableRow = {
   jumlah_pct: number;
 };
 
+// ==================== HELPER TANGGAL (ASIA/JAKARTA) ====================
+
+const todayISOJakarta = (base = new Date()): string => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(base); // "YYYY-MM-DD"
+};
+
+const addDaysJakarta = (iso: string, delta: number): string => {
+  // iso: "YYYY-MM-DD"
+  const d = new Date(`${iso}T00:00:00+07:00`);
+  d.setDate(d.getDate() + delta);
+  return todayISOJakarta(d);
+};
+
 export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
   const {
     distrik,
@@ -76,11 +95,8 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
 
   const distrikOptions = useMemo(() => ["DTM", "DBR"], []);
 
-  // ⬇⬇⬇ DI SINI PERUBAHANNYA: selalu pakai constants, bukan dari data
-  const kebunOptions = useMemo(
-    () => Object.keys(KEBUN_LABEL),
-    []
-  );
+  // selalu pakai constants, bukan dari data
+  const kebunOptions = useMemo(() => Object.keys(KEBUN_LABEL), []);
 
   const kategoriOptions = useMemo<(Kategori | "all")[]>(
     () => ["all", "TM", "TBM", "BIBITAN"],
@@ -435,26 +451,57 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
       .filter((x) => x.stok > 0 || x.sisa > 0);
   }, [filtered]);
 
+  // ==================== TANGGAL UNTUK TABEL TM/TBM/TM&TBM ====================
+
+  const todayISO = todayISOJakarta();              // contoh: 2025-11-16
+  const tomorrowISO = addDaysJakarta(todayISO, 1); // 2025-11-17
+  const last5StartISO = addDaysJakarta(todayISO, -4); // 2025-11-12
+  const last5EndISO = todayISO;                       // 2025-11-16
+
+  // =============== DEBUG: CEK BARIS YANG MASUK 5 HARI TERAKHIR ===============
+  if (process.env.NODE_ENV !== "production") {
+    const debugRows = filtered.filter(
+      (r) =>
+        r.tanggal &&
+        r.tanggal >= last5StartISO &&
+        r.tanggal <= last5EndISO &&
+        (
+          (r.tm_realisasi ?? 0) > 0 ||
+          (r.tbm_realisasi ?? 0) > 0 ||
+          (r.realisasi_total ?? 0) > 0
+        )
+    );
+
+    if (debugRows.length > 0) {
+      // Kalau di FertRow kamu ada kolom real_app1/2/3, tambahkan juga di sini
+      console.groupCollapsed(
+        "[Pemupukan] DEBUG Real 5 Hari Terakhir",
+        `window: ${last5StartISO} s.d. ${last5EndISO}`
+      );
+      console.table(
+        debugRows.map((r) => ({
+          tanggal: r.tanggal,
+          kebun: r.kebun,
+          tm_realisasi: r.tm_realisasi ?? 0,
+          tbm_realisasi: r.tbm_realisasi ?? 0,
+          real_total: r.realisasi_total ?? 0,
+          // sesuaikan nama kolom aplikasi kalau ada
+          // real_app1: (r as any).real_app1 ?? 0,
+          // real_app2: (r as any).real_app2 ?? 0,
+          // real_app3: (r as any).real_app3 ?? 0,
+        }))
+      );
+      console.groupEnd();
+    } else {
+      console.info(
+        "[Pemupukan] DEBUG Real 5 Hari Terakhir: tidak ada baris dengan realisasi > 0",
+        `window: ${last5StartISO} s.d. ${last5EndISO}`
+      );
+    }
+  }
+  // 2025-11-16
+
   // ==================== TABEL TM/TBM/TM&TBM ====================
-
-  const toLocalISO = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
-
-  const addDays = (iso: string, delta: number) => {
-    const [Y, M, D] = iso.split("-").map(Number);
-    const t = new Date(Y, M - 1, D);
-    t.setDate(t.getDate() + delta);
-    return toLocalISO(t);
-  };
-
-  const todayISO = toLocalISO(new Date());
-  const tomorrowISO = addDays(todayISO, 1);
-  const last5StartISO = addDays(todayISO, -4);
-  const last5EndISO = todayISO;
 
   type Agg = {
     app1_rencana: number;
@@ -526,6 +573,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
 
         g.jumlah_rencana_total += renBase;
 
+        // Real 5 hari terakhir: hanya kalau tanggal masuk window
         if (
           r.tanggal &&
           r.tanggal >= last5StartISO &&
@@ -538,6 +586,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
           g.app3_real += apps.real_app3 ?? 0;
         }
 
+        // Harian (hari ini & besok)
         if (r.tanggal === todayISO) {
           g.rencana_today += renBase;
           g.real_today += realBase;
@@ -546,6 +595,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
           g.rencana_tomorrow += renBase;
         }
 
+        // Rencana per aplikasi
         const apps: Apps = r as unknown as Apps;
         g.app1_rencana += apps.rencana_app1 ?? 0;
         g.app2_rencana += apps.rencana_app2 ?? 0;
@@ -563,20 +613,18 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
       by.forEach((g) => {
         const hasRenApps =
           g.app1_rencana + g.app2_rencana + g.app3_rencana > 0;
-        const hasRealApps = g.app1_real + g.app2_real + g.app3_real > 0;
 
+        // Kalau rencana per aplikasi belum diisi, bagi otomatis dari total rencana
         if (!hasRenApps && g.jumlah_rencana_total > 0) {
           const [a1, a2, a3] = split3(g.jumlah_rencana_total);
           g.app1_rencana = a1;
           g.app2_rencana = a2;
           g.app3_rencana = a3;
         }
-        if (!hasRealApps && g.real_last5_total > 0) {
-          const [a1, a2, a3] = split3(g.real_last5_total);
-          g.app1_real = a1;
-          g.app2_real = a2;
-          g.app3_real = a3;
-        }
+
+        // REAL per aplikasi TIDAK dibagi otomatis.
+        // Jadi kalau belum ada data real_app1/2/3 di window 5 hari,
+        // kolom Real 5 Hari Terakhir per aplikasi akan tetap 0.
       });
 
       const pct = (real: number, ren: number) =>

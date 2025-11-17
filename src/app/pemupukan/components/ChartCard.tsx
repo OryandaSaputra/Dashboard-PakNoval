@@ -1,14 +1,25 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function ChartCard({
-  title, children, className = "", height = "h-[320px]",
-}: { title: string; children: React.ReactNode; className?: string; height?: string; }) {
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <Card className={`bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 ${className}`}>
-      <CardHeader className="pb-1">
-        <CardTitle className="text-[13px]">{title}</CardTitle>
+    <Card className="shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold text-slate-800">
+          {title}
+        </CardTitle>
       </CardHeader>
-      <CardContent className={`${height}`}>{children}</CardContent>
+      <CardContent className="pt-0">
+        {/* ⬇️ JANGAN pakai h-64 / h-72. Pakai min-h atau biarkan auto */}
+        <div className="w-full min-h-[260px] overflow-visible">
+          {children}
+        </div>
+      </CardContent>
     </Card>
   );
 }

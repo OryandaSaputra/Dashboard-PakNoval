@@ -1,458 +1,385 @@
-// src/app/api/pemupukan/visualisasi/route.ts
-import { NextResponse } from "next/server";
-import prisma from "@/lib/db"; // Prisma client
+// // src/app/pemupukan/visualisasi/route.ts
+// import { NextResponse } from "next/server";
+// import prisma from "@/lib/db";
 
-// ====== Type untuk payload yang dipakai Visualisasi.tsx ======
-type AggPupukRow = {
-  jenis: string;
-  rencana: number;
-  realisasi: number;
-  rencana_ha: number;
-  realisasi_ha: number;
-  progress: number;
-};
+// // ====== Type Payload ======
+// type AggPupukRow = {
+//   jenis: string;
+//   rencana: number;
+//   realisasi: number;
+//   rencana_ha: number;
+//   realisasi_ha: number;
+//   progress: number;
+// };
 
-type StokSisaRow = {
-  distrik: string;
-  stok: number;
-  sisa: number;
-  stok_pct: number;
-  sisa_pct: number;
-};
+// type StokSisaRow = {
+//   distrik: string;
+//   stok: number;
+//   sisa: number;
+//   stok_pct: number;
+//   sisa_pct: number;
+// };
 
-/** Struktur baris tabel TM / TBM / TM&TBM (harus sama dengan Visualisasi.tsx) */
-export type TmRow = {
-  no?: number;
-  kebun: string;
-  // APLIKASI - I
-  app1_rencana: number;
-  app1_real: number;
-  app1_pct: number;
-  // APLIKASI - II
-  app2_rencana: number;
-  app2_real: number;
-  app2_pct: number;
-  // APLIKASI - III
-  app3_rencana: number;
-  app3_real: number;
-  app3_pct: number;
-  // Harian (Kg)
-  renc_selasa: number; // Rencana Hari Ini
-  real_selasa: number; // Realisasi Hari Ini
-  renc_rabu: number; // Rencana Besok
-  // Jumlah
-  jumlah_rencana2025: number;
-  jumlah_realSd0710: number; // Real 5 hari terakhir (total)
-  jumlah_pct: number;
-};
+// export type TmRow = {
+//   no?: number;
+//   kebun: string;
 
-type HeaderDates = {
-  today?: string;
-  tomorrow?: string;
-  selasa?: string;
-  rabu?: string;
-};
+//   app1_rencana: number;
+//   app1_real: number;
+//   app1_pct: number;
 
-type RealWindow = { start?: string; end?: string };
+//   app2_rencana: number;
+//   app2_real: number;
+//   app2_pct: number;
 
-type VisualisasiPayload = {
-  aggPupuk: AggPupukRow[];
-  stokVsSisa: StokSisaRow[];
-  tmRows: TmRow[];
-  tbmRows: TmRow[];
-  tmTbmRows: TmRow[];
-  headerDates?: HeaderDates;
-  realWindow?: RealWindow;
-  realCutoffDate?: string;
-};
+//   app3_rencana: number;
+//   app3_real: number;
+//   app3_pct: number;
 
-// ===================[ Helper tanggal: Asia/Jakarta ]===================
-function todayISOJakarta(base = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(base);
-}
+//   renc_selasa: number;
+//   real_selasa: number;
+//   renc_rabu: number;
 
-function addDaysJakarta(iso: string, n: number): string {
-  const d = new Date(`${iso}T00:00:00+07:00`);
-  d.setDate(d.getDate() + n);
-  return todayISOJakarta(d);
-}
+//   jumlah_rencana2025: number;
+//   jumlah_realSd0710: number;
+//   jumlah_pct: number;
+// };
 
-function toISODate(d: Date): string {
-  // format YYYY-MM-DD
-  return d.toISOString().slice(0, 10);
-}
+// type HeaderDates = {
+//   today?: string;
+//   tomorrow?: string;
+//   selasa?: string;
+//   rabu?: string;
+// };
 
-function safePct(real: number, rencana: number): number {
-  if (!rencana || rencana === 0) return 0;
-  return (real / rencana) * 100;
-}
+// type RealWindow = { start?: string; end?: string };
 
-// =====================================================================
-// ===================[ AGGREGASI DARI DATABASE ]=======================
-// =====================================================================
+// type VisualisasiPayload = {
+//   aggPupuk: AggPupukRow[];
+//   stokVsSisa: StokSisaRow[];
+//   tmRows: TmRow[];
+//   tbmRows: TmRow[];
+//   tmTbmRows: TmRow[];
+//   headerDates?: HeaderDates;
+//   realWindow?: RealWindow;
+//   realCutoffDate?: string;
+// };
 
-// Asumsi nama model Prisma:
-// model PemupukanRencana { ... }
-// model PemupukanRealisasi { ... }
-// dan di PrismaClient: prisma.pemupukanRencana & prisma.pemupukanRealisasi
+// // =================== Helpers ===================
+// function todayISOJakarta(base = new Date()): string {
+//   return new Intl.DateTimeFormat("en-CA", {
+//     timeZone: "Asia/Jakarta",
+//     year: "numeric",
+//     month: "2-digit",
+//     day: "2-digit",
+//   }).format(base);
+// }
 
-type Kategori = "TM" | "TBM" | "BIBITAN";
+// function addDaysJakarta(iso: string, n: number): string {
+//   const d = new Date(`${iso}T00:00:00+07:00`);
+//   d.setDate(d.getDate() + n);
+//   return todayISOJakarta(d);
+// }
 
-type RencanaRecord = {
-  id: number | string;
-  kategori: Kategori;
-  kebun: string;
-  jenis_pupuk: string;
-  aplikasi: number;
-  tanggal: Date;
-  luas: number | null;
-  kg_pupuk: number | null;
-};
+// function toISODate(d: Date | null): string {
+//   if (!d) return "";
+//   return d.toISOString().slice(0, 10);
+// }
 
-type RealisasiRecord = RencanaRecord;
+// function normalizeNum(v: unknown): number {
+//   const n = Number(v);
+//   return Number.isFinite(n) ? n : 0;
+// }
 
-// Hindari any di sini
-function normalizeNum(v: unknown): number {
-  if (v == null) return 0;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
+// function safePct(real: number, rencana: number): number {
+//   if (!rencana) return 0;
+//   return (real / rencana) * 100;
+// }
 
-// Hitung agregat per jenis pupuk untuk pie chart
-function buildAggPupuk(
-  rencanas: RencanaRecord[],
-  realisasis: RealisasiRecord[]
-): AggPupukRow[] {
-  const map = new Map<
-    string,
-    {
-      jenis: string;
-      rencana: number;
-      realisasi: number;
-      rencana_ha: number;
-      realisasi_ha: number;
-    }
-  >();
+// // =================== Prisma Record Types ===================
+// type Kategori = "TM" | "TBM" | "BIBITAN";
 
-  for (const r of rencanas) {
-    const jenis = r.jenis_pupuk || "LAINNYA";
-    const key = jenis.toUpperCase();
-    const kg = normalizeNum(r.kg_pupuk);
-    const ha = normalizeNum(r.luas);
-    const current =
-      map.get(key) ?? {
-        jenis: key,
-        rencana: 0,
-        realisasi: 0,
-        rencana_ha: 0,
-        realisasi_ha: 0,
-      };
-    current.rencana += kg;
-    current.rencana_ha += ha;
-    map.set(key, current);
-  }
+// interface RencanaRecord {
+//   id: number;
+//   kategori: Kategori;
+//   kebun: string;
+//   kodeKebun: string;
+//   tanggal: Date | null;
+//   afd: string;
+//   tt: string;
+//   blok: string;
+//   luasHa: number;
+//   inv: number;
+//   jenisPupuk: string;
+//   aplikasiKe: number;
+//   dosisKgPerPokok: number;
+//   kgPupuk: number;
+// }
 
-  for (const x of realisasis) {
-    const jenis = x.jenis_pupuk || "LAINNYA";
-    const key = jenis.toUpperCase();
-    const kg = normalizeNum(x.kg_pupuk);
-    const ha = normalizeNum(x.luas);
-    const current =
-      map.get(key) ?? {
-        jenis: key,
-        rencana: 0,
-        realisasi: 0,
-        rencana_ha: 0,
-        realisasi_ha: 0,
-      };
-    current.realisasi += kg;
-    current.realisasi_ha += ha;
-    map.set(key, current);
-  }
+// type RealisasiRecord = RencanaRecord;
 
-  return Array.from(map.values()).map((row) => ({
-    ...row,
-    progress: safePct(row.realisasi, row.rencana),
-  }));
-}
+// // =================== Pie Chart Builder ===================
+// function buildAggPupuk(
+//   rencanas: RencanaRecord[],
+//   realisasis: RealisasiRecord[]
+// ): AggPupukRow[] {
+//   const map = new Map<
+//     string,
+//     {
+//       jenis: string;
+//       rencana: number;
+//       realisasi: number;
+//       rencana_ha: number;
+//       realisasi_ha: number;
+//     }
+//   >();
 
-// Hitung tabel TM/TBM berdasar kategori
-function buildTmRowsByKategori(
-  kategori: "TM" | "TBM",
-  rencanas: RencanaRecord[],
-  realisasis: RealisasiRecord[],
-  todayISO: string,
-  tomorrowISO: string,
-  windowStartISO: string,
-  windowEndISO: string
-): TmRow[] {
-  const rencanaK = rencanas.filter((r) => r.kategori === kategori);
-  const realisasiK = realisasis.filter((r) => r.kategori === kategori);
+//   for (const r of rencanas) {
+//     const key = r.jenisPupuk.toUpperCase();
+//     const existing = map.get(key) ?? {
+//       jenis: key,
+//       rencana: 0,
+//       realisasi: 0,
+//       rencana_ha: 0,
+//       realisasi_ha: 0,
+//     };
 
-  // kumpulkan semua kebun yang ada di rencana/realisasi
-  const kebunSet = new Set<string>();
-  rencanaK.forEach((r) => kebunSet.add(r.kebun));
-  realisasiK.forEach((r) => kebunSet.add(r.kebun));
+//     existing.rencana += normalizeNum(r.kgPupuk);
+//     existing.rencana_ha += normalizeNum(r.luasHa);
 
-  const result: TmRow[] = [];
+//     map.set(key, existing);
+//   }
 
-  for (const kebun of kebunSet) {
-    const rencKebun = rencanaK.filter((r) => r.kebun === kebun);
-    const realKebun = realisasiK.filter((r) => r.kebun === kebun);
+//   for (const x of realisasis) {
+//     const key = x.jenisPupuk.toUpperCase();
+//     const existing = map.get(key) ?? {
+//       jenis: key,
+//       rencana: 0,
+//       realisasi: 0,
+//       rencana_ha: 0,
+//       realisasi_ha: 0,
+//     };
 
-    const sumFilter = <T extends RencanaRecord | RealisasiRecord>(
-      list: T[],
-      predicate: (x: T) => boolean
-    ) =>
-      list.reduce(
-        (acc, x) => (predicate(x) ? acc + normalizeNum(x.kg_pupuk) : acc),
-        0
-      );
+//     existing.realisasi += normalizeNum(x.kgPupuk);
+//     existing.realisasi_ha += normalizeNum(x.luasHa);
 
-    // aplikasi 1 / 2 / 3
-    const app1_rencana = sumFilter(rencKebun, (x) => x.aplikasi === 1);
-    const app2_rencana = sumFilter(rencKebun, (x) => x.aplikasi === 2);
-    const app3_rencana = sumFilter(rencKebun, (x) => x.aplikasi === 3);
+//     map.set(key, existing);
+//   }
 
-    // Real 5 hari terakhir per aplikasi
-    const app1_real = sumFilter(realKebun, (x) => {
-      const iso = toISODate(x.tanggal);
-      return x.aplikasi === 1 && iso >= windowStartISO && iso <= windowEndISO;
-    });
-    const app2_real = sumFilter(realKebun, (x) => {
-      const iso = toISODate(x.tanggal);
-      return x.aplikasi === 2 && iso >= windowStartISO && iso <= windowEndISO;
-    });
-    const app3_real = sumFilter(realKebun, (x) => {
-      const iso = toISODate(x.tanggal);
-      return x.aplikasi === 3 && iso >= windowStartISO && iso <= windowEndISO;
-    });
+//   return Array.from(map.values()).map((row) => ({
+//     ...row,
+//     progress: safePct(row.realisasi, row.rencana),
+//   }));
+// }
 
-    // Harian
-    const renc_selasa = sumFilter(rencKebun, (x) => {
-      const iso = toISODate(x.tanggal);
-      return iso === todayISO;
-    });
-    const real_selasa = sumFilter(realKebun, (x) => {
-      const iso = toISODate(x.tanggal);
-      return iso === todayISO;
-    });
-    const renc_rabu = sumFilter(rencKebun, (x) => {
-      const iso = toISODate(x.tanggal);
-      return iso === tomorrowISO;
-    });
+// // =================== Build TM/TBM Rows ===================
+// function buildTmRows(
+//   kategori: Kategori,
+//   rencanas: RencanaRecord[],
+//   realisasis: RealisasiRecord[],
+//   todayISO: string,
+//   tomorrowISO: string,
+//   winStartISO: string,
+//   winEndISO: string
+// ): TmRow[] {
+//   const renK = rencanas.filter((r) => r.kategori === kategori);
+//   const realK = realisasis.filter((r) => r.kategori === kategori);
 
-    // Jumlah (asumsi tahun 2025 sesuai nama field)
-    const jumlah_rencana2025 = rencKebun.reduce((acc, x) => {
-      const year = x.tanggal.getFullYear();
-      return year === 2025 ? acc + normalizeNum(x.kg_pupuk) : acc;
-    }, 0);
+//   const kebuns = new Set([...renK.map(r => r.kebun), ...realK.map(r => r.kebun)]);
 
-    const jumlah_realSd0710 = realKebun.reduce((acc, x) => {
-      const iso = toISODate(x.tanggal);
-      return iso >= windowStartISO && iso <= windowEndISO
-        ? acc + normalizeNum(x.kg_pupuk)
-        : acc;
-    }, 0);
+//   const out: TmRow[] = [];
 
-    const row: TmRow = {
-      kebun,
-      // app I
-      app1_rencana,
-      app1_real,
-      app1_pct: safePct(app1_real, app1_rencana),
-      // app II
-      app2_rencana,
-      app2_real,
-      app2_pct: safePct(app2_real, app2_rencana),
-      // app III
-      app3_rencana,
-      app3_real,
-      app3_pct: safePct(app3_real, app3_rencana),
-      // harian
-      renc_selasa,
-      real_selasa,
-      renc_rabu,
-      // jumlah
-      jumlah_rencana2025,
-      jumlah_realSd0710,
-      jumlah_pct: safePct(jumlah_realSd0710, jumlah_rencana2025),
-    };
+//   for (const kebun of kebuns) {
+//     const renX = renK.filter((r) => r.kebun === kebun);
+//     const realX = realK.filter((r) => r.kebun === kebun);
 
-    result.push(row);
-  }
+//     const sumApp = (list: RencanaRecord[] | RealisasiRecord[], app: number) =>
+//       list
+//         .filter((x) => x.aplikasiKe === app)
+//         .reduce((acc, x) => acc + normalizeNum(x.kgPupuk), 0);
 
-  // isi nomor urut dan sort by kebun biar rapi
-  result.sort((a, b) => a.kebun.localeCompare(b.kebun));
-  return result.map((r, idx) => ({ ...r, no: idx + 1 }));
-}
+//     const sumRealWindow = (list: RealisasiRecord[], app: number) =>
+//       list
+//         .filter(
+//           (x) =>
+//             x.aplikasiKe === app &&
+//             x.tanggal &&
+//             toISODate(x.tanggal) >= winStartISO &&
+//             toISODate(x.tanggal) <= winEndISO
+//         )
+//         .reduce((acc, x) => acc + normalizeNum(x.kgPupuk), 0);
 
-// Gabungkan TM & TBM jadi TM&TBM (per kebun)
-function buildTmTbmRows(tmRows: TmRow[], tbmRows: TmRow[]): TmRow[] {
-  type Agg = {
-    kebun: string;
-    app1_rencana: number;
-    app1_real: number;
-    app2_rencana: number;
-    app2_real: number;
-    app3_rencana: number;
-    app3_real: number;
-    renc_selasa: number;
-    real_selasa: number;
-    renc_rabu: number;
-    jumlah_rencana2025: number;
-    jumlah_realSd0710: number;
-  };
+//     const rencanaHariIni = renX
+//       .filter((x) => x.tanggal && toISODate(x.tanggal) === todayISO)
+//       .reduce((a, b) => a + normalizeNum(b.kgPupuk), 0);
 
-  const map = new Map<string, Agg>();
+//     const realHariIni = realX
+//       .filter((x) => x.tanggal && toISODate(x.tanggal) === todayISO)
+//       .reduce((a, b) => a + normalizeNum(b.kgPupuk), 0);
 
-  const addRow = (r: TmRow) => {
-    const current =
-      map.get(r.kebun) ?? {
-        kebun: r.kebun,
-        app1_rencana: 0,
-        app1_real: 0,
-        app2_rencana: 0,
-        app2_real: 0,
-        app3_rencana: 0,
-        app3_real: 0,
-        renc_selasa: 0,
-        real_selasa: 0,
-        renc_rabu: 0,
-        jumlah_rencana2025: 0,
-        jumlah_realSd0710: 0,
-      };
-    current.app1_rencana += r.app1_rencana;
-    current.app1_real += r.app1_real;
-    current.app2_rencana += r.app2_rencana;
-    current.app2_real += r.app2_real;
-    current.app3_rencana += r.app3_rencana;
-    current.app3_real += r.app3_real;
-    current.renc_selasa += r.renc_selasa;
-    current.real_selasa += r.real_selasa;
-    current.renc_rabu += r.renc_rabu;
-    current.jumlah_rencana2025 += r.jumlah_rencana2025;
-    current.jumlah_realSd0710 += r.jumlah_realSd0710;
-    map.set(r.kebun, current);
-  };
+//     const rencanaBesok = renX
+//       .filter((x) => x.tanggal && toISODate(x.tanggal) === tomorrowISO)
+//       .reduce((a, b) => a + normalizeNum(b.kgPupuk), 0);
 
-  tmRows.forEach(addRow);
-  tbmRows.forEach(addRow);
+//     const rencana2025 = renX
+//       .filter((x) => x.tanggal && x.tanggal.getFullYear() === 2025)
+//       .reduce((a, b) => a + normalizeNum(b.kgPupuk), 0);
 
-  const rows: TmRow[] = Array.from(map.values()).map((agg) => {
-    const app1_pct = safePct(agg.app1_real, agg.app1_rencana);
-    const app2_pct = safePct(agg.app2_real, agg.app2_rencana);
-    const app3_pct = safePct(agg.app3_real, agg.app3_rencana);
-    const jumlah_pct = safePct(
-      agg.jumlah_realSd0710,
-      agg.jumlah_rencana2025
-    );
-    return {
-      kebun: agg.kebun,
-      app1_rencana: agg.app1_rencana,
-      app1_real: agg.app1_real,
-      app1_pct,
-      app2_rencana: agg.app2_rencana,
-      app2_real: agg.app2_real,
-      app2_pct,
-      app3_rencana: agg.app3_rencana,
-      app3_real: agg.app3_real,
-      app3_pct,
-      renc_selasa: agg.renc_selasa,
-      real_selasa: agg.real_selasa,
-      renc_rabu: agg.renc_rabu,
-      jumlah_rencana2025: agg.jumlah_rencana2025,
-      jumlah_realSd0710: agg.jumlah_realSd0710,
-      jumlah_pct,
-    };
-  });
+//     const real5hari = realX
+//       .filter(
+//         (x) =>
+//           x.tanggal &&
+//           toISODate(x.tanggal) >= winStartISO &&
+//           toISODate(x.tanggal) <= winEndISO
+//       )
+//       .reduce((a, b) => a + normalizeNum(b.kgPupuk), 0);
 
-  rows.sort((a, b) => a.kebun.localeCompare(b.kebun));
-  return rows.map((r, idx) => ({ ...r, no: idx + 1 }));
-}
+//     out.push({
+//       kebun,
 
-// =====================================================================
-// ===========================[ HANDLER GET ]============================
-// =====================================================================
+//       app1_rencana: sumApp(renX, 1),
+//       app1_real: sumRealWindow(realX, 1),
+//       app1_pct: safePct(sumRealWindow(realX, 1), sumApp(renX, 1)),
 
-export async function GET() {
-  try {
-    // Tanggal referensi: hari ini Jakarta
-    const todayISO = todayISOJakarta();
-    const tomorrowISO = addDaysJakarta(todayISO, 1);
-    const windowEndISO = todayISO;
-    const windowStartISO = addDaysJakarta(windowEndISO, -4); // 5 hari terakhir
+//       app2_rencana: sumApp(renX, 2),
+//       app2_real: sumRealWindow(realX, 2),
+//       app2_pct: safePct(sumRealWindow(realX, 2), sumApp(renX, 2)),
 
-    // Untuk menghindari error TS di akses model Prisma:
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prismaAny = prisma as any;
+//       app3_rencana: sumApp(renX, 3),
+//       app3_real: sumRealWindow(realX, 3),
+//       app3_pct: safePct(sumRealWindow(realX, 3), sumApp(renX, 3)),
 
-    // Ambil SEMUA data rencana & realisasi
-    const [rencanasRaw, realisasisRaw] = await Promise.all([
-      prismaAny.pemupukanRencana.findMany(),
-      prismaAny.pemupukanRealisasi.findMany(),
-    ]);
+//       renc_selasa: rencanaHariIni,
+//       real_selasa: realHariIni,
+//       renc_rabu: rencanaBesok,
 
-    const rencanas = rencanasRaw as RencanaRecord[];
-    const realisasis = realisasisRaw as RealisasiRecord[];
+//       jumlah_rencana2025: rencana2025,
+//       jumlah_realSd0710: real5hari,
+//       jumlah_pct: safePct(real5hari, rencana2025),
+//     });
+//   }
 
-    // 1) Pie chart: aggPupuk
-    const aggPupuk = buildAggPupuk(rencanas, realisasis);
+//   out.sort((a, b) => a.kebun.localeCompare(b.kebun));
+//   return out.map((r, i) => ({ ...r, no: i + 1 }));
+// }
 
-    // 2) Tabel TM, TBM
-    const tmRows = buildTmRowsByKategori(
-      "TM",
-      rencanas,
-      realisasis,
-      todayISO,
-      tomorrowISO,
-      windowStartISO,
-      windowEndISO
-    );
+// // =================== Build TM + TBM ===================
+// function buildTmTbmRows(tmRows: TmRow[], tbmRows: TmRow[]) {
+//   const map = new Map<string, TmRow>();
 
-    const tbmRows = buildTmRowsByKategori(
-      "TBM",
-      rencanas,
-      realisasis,
-      todayISO,
-      tomorrowISO,
-      windowStartISO,
-      windowEndISO
-    );
+//   const accumulate = (src: TmRow) => {
+//     const cur =
+//       map.get(src.kebun) ??
+//       ({
+//         kebun: src.kebun,
+//         app1_rencana: 0,
+//         app1_real: 0,
+//         app1_pct: 0,
+//         app2_rencana: 0,
+//         app2_real: 0,
+//         app2_pct: 0,
+//         app3_rencana: 0,
+//         app3_real: 0,
+//         app3_pct: 0,
+//         renc_selasa: 0,
+//         real_selasa: 0,
+//         renc_rabu: 0,
+//         jumlah_rencana2025: 0,
+//         jumlah_realSd0710: 0,
+//         jumlah_pct: 0,
+//       } as TmRow);
 
-    // 3) Tabel TM & TBM gabungan
-    const tmTbmRows = buildTmTbmRows(tmRows, tbmRows);
+//     cur.app1_rencana += src.app1_rencana;
+//     cur.app1_real += src.app1_real;
 
-    // 4) Stok vs sisa -> sementara kosong (belum ada tabel stok di DB)
-    const stokVsSisa: StokSisaRow[] = [];
+//     cur.app2_rencana += src.app2_rencana;
+//     cur.app2_real += src.app2_real;
 
-    const payload: VisualisasiPayload = {
-      aggPupuk,
-      stokVsSisa,
-      tmRows,
-      tbmRows,
-      tmTbmRows,
-      headerDates: {
-        today: todayISO,
-        tomorrow: tomorrowISO,
-        selasa: todayISO, // supaya kompatibel dengan Visualisasi.tsx
-        rabu: tomorrowISO,
-      },
-      realWindow: {
-        start: windowStartISO,
-        end: windowEndISO,
-      },
-      realCutoffDate: windowEndISO,
-    };
+//     cur.app3_rencana += src.app3_rencana;
+//     cur.app3_real += src.app3_real;
 
-    return NextResponse.json(payload);
-  } catch (err) {
-    console.error("ERROR /api/pemupukan/visualisasi:", err);
-    return new NextResponse("Internal Server Error", { status: 500 });
-  }
-}
+//     cur.renc_selasa += src.renc_selasa;
+//     cur.real_selasa += src.real_selasa;
+//     cur.renc_rabu += src.renc_rabu;
+
+//     cur.jumlah_rencana2025 += src.jumlah_rencana2025;
+//     cur.jumlah_realSd0710 += src.jumlah_realSd0710;
+
+//     map.set(src.kebun, cur);
+//   };
+
+//   tmRows.forEach(accumulate);
+//   tbmRows.forEach(accumulate);
+
+//   const rows = Array.from(map.values()).map((r) => ({
+//     ...r,
+//     app1_pct: safePct(r.app1_real, r.app1_rencana),
+//     app2_pct: safePct(r.app2_real, r.app2_rencana),
+//     app3_pct: safePct(r.app3_real, r.app3_rencana),
+//     jumlah_pct: safePct(r.jumlah_realSd0710, r.jumlah_rencana2025),
+//   }));
+
+//   rows.sort((a, b) => a.kebun.localeCompare(b.kebun));
+//   return rows.map((r, i) => ({ ...r, no: i + 1 }));
+// }
+
+// // =================== GET Handler ===================
+// export async function GET() {
+//   try {
+//     const todayISO = todayISOJakarta();
+//     const tomorrowISO = addDaysJakarta(todayISO, 1);
+//     const winEndISO = todayISO;
+//     const winStartISO = addDaysJakarta(todayISO, -4);
+
+//     const rencanas = (await prisma.rencanaPemupukan.findMany()) as RencanaRecord[];
+//     const realisasis = (await prisma.realisasiPemupukan.findMany()) as RealisasiRecord[];
+
+//     const aggPupuk = buildAggPupuk(rencanas, realisasis);
+
+//     const tmRows = buildTmRows(
+//       "TM",
+//       rencanas,
+//       realisasis,
+//       todayISO,
+//       tomorrowISO,
+//       winStartISO,
+//       winEndISO
+//     );
+
+//     const tbmRows = buildTmRows(
+//       "TBM",
+//       rencanas,
+//       realisasis,
+//       todayISO,
+//       tomorrowISO,
+//       winStartISO,
+//       winEndISO
+//     );
+
+//     const tmTbmRows = buildTmTbmRows(tmRows, tbmRows);
+
+//     const payload: VisualisasiPayload = {
+//       aggPupuk,
+//       stokVsSisa: [],
+//       tmRows,
+//       tbmRows,
+//       tmTbmRows,
+//       headerDates: {
+//         today: todayISO,
+//         tomorrow: tomorrowISO,
+//         selasa: todayISO,
+//         rabu: tomorrowISO,
+//       },
+//       realWindow: {
+//         start: winStartISO,
+//         end: winEndISO,
+//       },
+//       realCutoffDate: winEndISO,
+//     };
+
+//     return NextResponse.json(payload);
+//   } catch (err) {
+//     console.error("ERROR /api/pemupukan/visualisasi:", err);
+//     return new NextResponse("Internal Server Error", { status: 500 });
+//   }
+// }

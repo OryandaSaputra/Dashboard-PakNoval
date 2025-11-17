@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Filter as FilterIcon, RefreshCcw } from "lucide-react";
+import { Filter as FilterIcon, RefreshCcw, Loader2 } from "lucide-react";
 import { KEBUN_LABEL } from "../constants";
 import type { Kategori } from "../derive";
 
@@ -17,6 +19,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
 
+  // filter state (dikontrol di parent)
   distrik: string;
   setDistrik: (v: string) => void;
 
@@ -56,6 +59,13 @@ type Props = {
   blokOptions: string[];
 
   resetFilter: () => void;
+
+  /** dipanggil saat tombol "Terapkan Filter" di-klik.
+   *  Parent akan gunakan nilai filter saat ini untuk fetch data dari DB. */
+  onApply: () => void;
+
+  /** status loading saat proses ambil data dari DB */
+  isApplying?: boolean;
 };
 
 export default function FilterPanel(props: Props) {
@@ -90,6 +100,8 @@ export default function FilterPanel(props: Props) {
     ttOptions,
     blokOptions,
     resetFilter,
+    onApply,
+    isApplying = false,
   } = props;
 
   if (!open) return null;
@@ -102,18 +114,36 @@ export default function FilterPanel(props: Props) {
           <h2 className="text-base font-semibold flex items-center gap-2">
             <FilterIcon className="h-5 w-5" /> Filter
           </h2>
+
           <div className="flex gap-2">
+            {/* Reset filter ke default (parent boleh sekalian refetch data default) */}
             <Button
               variant="outline"
               onClick={resetFilter}
               className="gap-2 h-8 px-3"
+              type="button"
             >
               <RefreshCcw className="h-4 w-4" /> Reset
             </Button>
+
+            {/* Terapkan filter -> parent fetch ke DB */}
+            <Button
+              onClick={onApply}
+              className="gap-2 h-8 px-3"
+              type="button"
+              disabled={isApplying}
+            >
+              {isApplying && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              {isApplying ? "Memuat..." : "Terapkan"}
+            </Button>
+
             <Button
               variant="outline"
               onClick={onClose}
               className="h-8 px-3"
+              type="button"
             >
               Tutup
             </Button>

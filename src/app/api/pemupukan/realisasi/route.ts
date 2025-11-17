@@ -24,8 +24,7 @@ function safeNumber(value: unknown, fallback: number = 0) {
 /**
  * Helper: parse tanggal dari payload
  * - jika null / "" / "-" → null
- * - jika bisa diparse → Date
- * - jika tidak valid → null
+ * - jika format "YYYY-MM-DD" → Date UTC midnight (tanpa geser hari)
  */
 function parseTanggal(value: unknown): Date | null {
   if (value === null || value === undefined) return null;
@@ -33,6 +32,19 @@ function parseTanggal(value: unknown): Date | null {
   const s = String(value).trim();
   if (s === "" || s === "-") return null;
 
+  // Format "YYYY-MM-DD"
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) {
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+
+    // Buat Date di UTC supaya tidak terpengaruh timezone lokal
+    const d = new Date(Date.UTC(year, month - 1, day));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // Fallback (kalau format lain)
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
   return d;
@@ -298,14 +310,16 @@ export async function PUT(req: Request) {
 
 /**
  * DELETE:
- * - ?id=123   → hapus satu baris
- * - ?all=1    → hapus SEMUA data realisasi
+ * - ?all=1           → hapus SEMUA data realisasi
+ * - ?kebun=KODE      → hapus SEMUA data realisasi untuk satu kebun
+ * - ?id=123          → hapus satu baris
  */
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const all = searchParams.get("all");
     const idParam = searchParams.get("id");
+    const kebunParam = searchParams.get("kebun");
 
     // 🔥 HAPUS SEMUA DATA
     if (all === "1") {
@@ -319,10 +333,34 @@ export async function DELETE(req: Request) {
       );
     }
 
+    // 🧺 HAPUS SEMUA DATA UNTUK SATU KEBUN
+    if (kebunParam) {
+      const kebunCode = kebunParam.trim();
+      if (!kebunCode) {
+        return NextResponse.json(
+          { message: "Parameter kebun tidak boleh kosong." },
+          { status: 400 }
+        );
+      }
+
+      const result = await prisma.realisasiPemupukan.deleteMany({
+        where: { kebun: kebunCode },
+      });
+
+      return NextResponse.json(
+        {
+          message: "Data realisasi untuk kebun tersebut berhasil dihapus.",
+          kebun: kebunCode,
+          deletedCount: result.count,
+        },
+        { status: 200 }
+      );
+    }
+
     // 🔁 HAPUS SATU DATA (default)
     if (!idParam) {
       return NextResponse.json(
-        { message: "Parameter id atau all=1 wajib diisi untuk hapus." },
+        { message: "Parameter id, kebun, atau all=1 wajib diisi untuk hapus." },
         { status: 400 }
       );
     }
