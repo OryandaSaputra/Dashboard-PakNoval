@@ -6,21 +6,56 @@ import Visualisasi, {
 import { prisma } from "@/lib/prisma";
 import { KategoriTanaman } from "@prisma/client";
 
-/* ===================[ Helper tanggal 5 hari ]=================== */
-function getFiveDayWindow(base: Date) {
-  const end = new Date(base);
+/* ===================[ Helper: ambil MIN–MAX tanggal realisasi ]=================== */
+async function getRealisasiRange(): Promise<{ start: Date; end: Date }> {
+  const [minRow, maxRow] = await Promise.all([
+    prisma.realisasiPemupukan.findFirst({
+      orderBy: { tanggal: "asc" },
+      select: { tanggal: true },
+    }),
+    prisma.realisasiPemupukan.findFirst({
+      orderBy: { tanggal: "desc" },
+      select: { tanggal: true },
+    }),
+  ]);
+
+  const today = new Date();
+  const today0 = new Date(today);
+  today0.setHours(0, 0, 0, 0);
+
+  if (!minRow?.tanggal || !maxRow?.tanggal) {
+    return { start: today0, end: today0 };
+  }
+
+  const start = new Date(minRow.tanggal);
+  const end = new Date(maxRow.tanggal);
+  start.setHours(0, 0, 0, 0);
   end.setHours(0, 0, 0, 0);
-  const start = new Date(end);
-  start.setDate(start.getDate() - 4);
+
   return { start, end };
 }
 
 /* ===================[ Build TM/TBM rows dari DB ]=================== */
+
+type RowInput = {
+  kebun: string;
+  aplikasiKe: number;
+  kgPupuk: number;
+  tanggal: Date | null;
+};
+
+/**
+ * usePeriodForRealisasi:
+ * - true  => realisasi hanya dihitung di antara period.start–period.end
+ * - false => realisasi dihitung TOTAL (abaikan tanggal), seperti keinginan default
+ */
 async function buildTmRowsFromDb(
   kategori: KategoriTanaman,
-  today: Date
+  today: Date,
+  period: { start: Date; end: Date },
+  usePeriodForRealisasi: boolean
 ): Promise<TmRow[]> {
-  const { start, end } = getFiveDayWindow(today);
+  const { start, end } = period;
 
   const [rencana, realisasi] = await Promise.all([
     prisma.rencanaPemupukan.findMany({
@@ -43,9 +78,23 @@ async function buildTmRowsFromDb(
     }),
   ]);
 
+  const rencanaRows: RowInput[] = rencana.map((r) => ({
+    kebun: r.kebun,
+    aplikasiKe: r.aplikasiKe ?? 0,
+    kgPupuk: r.kgPupuk ?? 0,
+    tanggal: r.tanggal,
+  }));
+
+  const realisasiRows: RowInput[] = realisasi.map((r) => ({
+    kebun: r.kebun,
+    aplikasiKe: r.aplikasiKe ?? 0,
+    kgPupuk: r.kgPupuk ?? 0,
+    tanggal: r.tanggal,
+  }));
+
   const kebunSet = new Set<string>();
-  rencana.forEach((r) => kebunSet.add(r.kebun));
-  realisasi.forEach((r) => kebunSet.add(r.kebun));
+  rencanaRows.forEach((r) => kebunSet.add(r.kebun));
+  realisasiRows.forEach((r) => kebunSet.add(r.kebun));
 
   const todayKey = new Date(today);
   todayKey.setHours(0, 0, 0, 0);
@@ -53,7 +102,7 @@ async function buildTmRowsFromDb(
   tomorrowKey.setDate(tomorrowKey.getDate() + 1);
 
   const sumKg = (
-    rows: { kebun: string; aplikasiKe: number; kgPupuk: number; tanggal: Date | null }[],
+    rows: RowInput[],
     kebun: string,
     aplikasi: number,
     startDate?: Date,
@@ -71,51 +120,64 @@ async function buildTmRowsFromDb(
   const rows: TmRow[] = [];
 
   [...kebunSet].forEach((kebun, idx) => {
-    // Aplikasi I
-    const app1_rencana = sumKg(rencana, kebun, 1);
-    const app1_real = sumKg(realisasi, kebun, 1);
+    // =================== RENCANA (selalu total, tidak pakai periode) ===================
+    const app1_rencana = sumKg(rencanaRows, kebun, 1);
+    const app2_rencana = sumKg(rencanaRows, kebun, 2);
+    const app3_rencana = sumKg(rencanaRows, kebun, 3);
+
+    // =================== REALISASI ===================
+    // Default (tanpa filter) => TOTAL: panggil tanpa start/end
+    // Jika user pilih filter tanggal => pakai periode start–end
+    const app1_real = usePeriodForRealisasi
+      ? sumKg(realisasiRows, kebun, 1, start, end)
+      : sumKg(realisasiRows, kebun, 1);
+
+    const app2_real = usePeriodForRealisasi
+      ? sumKg(realisasiRows, kebun, 2, start, end)
+      : sumKg(realisasiRows, kebun, 2);
+
+    const app3_real = usePeriodForRealisasi
+      ? sumKg(realisasiRows, kebun, 3, start, end)
+      : sumKg(realisasiRows, kebun, 3);
+
     const app1_pct =
       app1_rencana > 0 ? (app1_real / app1_rencana) * 100 : 0;
-
-    // Aplikasi II
-    const app2_rencana = sumKg(rencana, kebun, 2);
-    const app2_real = sumKg(realisasi, kebun, 2);
     const app2_pct =
       app2_rencana > 0 ? (app2_real / app2_rencana) * 100 : 0;
-
-    // Aplikasi III
-    const app3_rencana = sumKg(rencana, kebun, 3);
-    const app3_real = sumKg(realisasi, kebun, 3);
     const app3_pct =
       app3_rencana > 0 ? (app3_real / app3_rencana) * 100 : 0;
 
-    // Rencana / real hari ini (semua aplikasi)
+    // Rencana / real hari ini (semua aplikasi) – tetap pakai tanggal hari ini
     const renc_selasa =
-      sumKg(rencana, kebun, 1, todayKey, todayKey) +
-      sumKg(rencana, kebun, 2, todayKey, todayKey) +
-      sumKg(rencana, kebun, 3, todayKey, todayKey);
+      sumKg(rencanaRows, kebun, 1, todayKey, todayKey) +
+      sumKg(rencanaRows, kebun, 2, todayKey, todayKey) +
+      sumKg(rencanaRows, kebun, 3, todayKey, todayKey);
 
     const real_selasa =
-      sumKg(realisasi, kebun, 1, todayKey, todayKey) +
-      sumKg(realisasi, kebun, 2, todayKey, todayKey) +
-      sumKg(realisasi, kebun, 3, todayKey, todayKey);
+      sumKg(realisasiRows, kebun, 1, todayKey, todayKey) +
+      sumKg(realisasiRows, kebun, 2, todayKey, todayKey) +
+      sumKg(realisasiRows, kebun, 3, todayKey, todayKey);
 
-    // rencana besok (semua aplikasi)
+    // Rencana besok (semua aplikasi)
     const renc_rabu =
-      sumKg(rencana, kebun, 1, tomorrowKey, tomorrowKey) +
-      sumKg(rencana, kebun, 2, tomorrowKey, tomorrowKey) +
-      sumKg(rencana, kebun, 3, tomorrowKey, tomorrowKey);
+      sumKg(rencanaRows, kebun, 1, tomorrowKey, tomorrowKey) +
+      sumKg(rencanaRows, kebun, 2, tomorrowKey, tomorrowKey) +
+      sumKg(rencanaRows, kebun, 3, tomorrowKey, tomorrowKey);
 
-    // jumlah total (tahun berjalan, semua aplikasi)
+    // Jumlah total rencana (semua tahun, semua aplikasi)
     const jumlah_rencana2025 =
-      sumKg(rencana, kebun, 1) +
-      sumKg(rencana, kebun, 2) +
-      sumKg(rencana, kebun, 3);
+      app1_rencana + app2_rencana + app3_rencana;
 
-    const jumlah_realSd0710 =
-      sumKg(realisasi, kebun, 1, start, end) +
-      sumKg(realisasi, kebun, 2, start, end) +
-      sumKg(realisasi, kebun, 3, start, end);
+    // Jumlah realisasi:
+    // - default: total (tanpa filter)
+    // - jika filter: hanya di periode
+    const jumlah_realSd0710 = usePeriodForRealisasi
+      ? sumKg(realisasiRows, kebun, 1, start, end) +
+        sumKg(realisasiRows, kebun, 2, start, end) +
+        sumKg(realisasiRows, kebun, 3, start, end)
+      : sumKg(realisasiRows, kebun, 1) +
+        sumKg(realisasiRows, kebun, 2) +
+        sumKg(realisasiRows, kebun, 3);
 
     const jumlah_pct =
       jumlah_rencana2025 > 0
@@ -155,13 +217,13 @@ async function getTotals() {
     const agg =
       model === "REN"
         ? await prisma.rencanaPemupukan.aggregate({
-          _sum: { kgPupuk: true },
-          where: kategori ? { kategori } : undefined,
-        })
+            _sum: { kgPupuk: true },
+            where: kategori ? { kategori } : undefined,
+          })
         : await prisma.realisasiPemupukan.aggregate({
-          _sum: { kgPupuk: true },
-          where: kategori ? { kategori } : undefined,
-        });
+            _sum: { kgPupuk: true },
+            where: kategori ? { kategori } : undefined,
+          });
 
     return agg._sum.kgPupuk ?? 0;
   };
@@ -184,8 +246,6 @@ async function getTotals() {
     sumKg("REAL", cat.BIBITAN),
   ]);
 
-  // Sementara: DTM/DBR pakai total saja (kalau kamu punya rule distrik,
-  // nanti tinggal ganti where: { kebun: { in: LIST_DTM } } dll).
   const dtmRencana = totalRencana;
   const dtmRealisasi = totalRealisasi;
   const dbrRencana = 0;
@@ -207,7 +267,6 @@ async function getTotals() {
   };
 }
 
-// Pie Rencana vs Realisasi per jenis pupuk
 async function getAggPupuk() {
   const rows = await prisma.$queryRaw<
     {
@@ -243,23 +302,96 @@ async function getAggPupuk() {
 
 /* ===================[ PAGE (server component) ]=================== */
 
-export default async function Page() {
+type SearchParams = {
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
   const today = new Date();
-  const todayISO = new Date(today);
-  todayISO.setHours(0, 0, 0, 0);
+  const today0 = new Date(today);
+  today0.setHours(0, 0, 0, 0);
+
+  const realRange = await getRealisasiRange();
+
+  let periodStart = new Date(realRange.start);
+  let periodEnd = new Date(realRange.end);
+
+  const hasUserFilter = Boolean(
+    (searchParams?.dateFrom ?? "") || (searchParams?.dateTo ?? "")
+  );
+
+  if (searchParams?.dateFrom) {
+    const df = new Date(searchParams.dateFrom);
+    if (!Number.isNaN(df.getTime())) {
+      periodStart = df;
+      periodStart.setHours(0, 0, 0, 0);
+    }
+  }
+
+  if (searchParams?.dateTo) {
+    const dt = new Date(searchParams.dateTo);
+    if (!Number.isNaN(dt.getTime())) {
+      periodEnd = dt;
+      periodEnd.setHours(0, 0, 0, 0);
+    }
+  }
+
+  if (periodStart > periodEnd) {
+    const tmp = periodStart;
+    periodStart = periodEnd;
+    periodEnd = tmp;
+  }
+
+    const effectivePeriod = { start: periodStart, end: periodEnd };
 
   const [tmRows, tbmRows, totals, aggPupuk] = await Promise.all([
-    buildTmRowsFromDb(KategoriTanaman.TM, today),
-    buildTmRowsFromDb(KategoriTanaman.TBM, today),
+    buildTmRowsFromDb(
+      KategoriTanaman.TM,
+      today0,
+      effectivePeriod,
+      hasUserFilter
+    ),
+    buildTmRowsFromDb(
+      KategoriTanaman.TBM,
+      today0,
+      effectivePeriod,
+      hasUserFilter
+    ),
     getTotals(),
     getAggPupuk(),
   ]);
 
   const tmTbmRows: TmRow[] = [...tmRows, ...tbmRows];
 
+  const todayISO = today0.toISOString().slice(0, 10);
+
   const headerDates = {
-    today: todayISO.toISOString().slice(0, 10),
+    today: todayISO,
   };
+
+  // 👉 LABEL untuk header tabel:
+  //    - kalau user pakai filter => pakai string dari query (dateFrom/dateTo)
+  //    - kalau tidak => pakai min–max realisasi dari DB
+  const labelStartISO =
+    hasUserFilter && searchParams?.dateFrom
+      ? searchParams.dateFrom
+      : realRange.start.toISOString().slice(0, 10);
+
+  const labelEndISO =
+    hasUserFilter && searchParams?.dateTo
+      ? searchParams.dateTo
+      : realRange.end.toISOString().slice(0, 10);
+
+  const realWindow = {
+    start: labelStartISO,
+    end: labelEndISO,
+  };
+
 
   return (
     <>
@@ -271,15 +403,16 @@ export default async function Page() {
         tanggalBesok={undefined}
       />
       <Visualisasi
-        barPerKebun={[]}         // belum dipakai di component
+        barPerKebun={[]}
         aggPupuk={aggPupuk}
-        stokVsSisa={[]}          // belum dipakai di component
+        stokVsSisa={[]}
         tmRows={tmRows}
         tbmRows={tbmRows}
         tmTbmRows={tmTbmRows}
         headerDates={headerDates}
-        realWindow={undefined}
-        realCutoffDate={undefined}
+        realWindow={realWindow}
+        realCutoffDate={realWindow.end}
+        hasUserFilter={hasUserFilter} 
       />
     </>
   );

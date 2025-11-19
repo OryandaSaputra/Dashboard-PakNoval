@@ -31,6 +31,7 @@ export type Filters = {
   jenis: string;
   dateFrom: string;
   dateTo: string;
+  year: string; // "all" atau "2024", "2025", dst
 };
 
 // ---- Baris untuk Tabel TM/TBM/TM&TBM
@@ -52,7 +53,7 @@ export type TmTableRow = {
   renc_rabu: number; // Rencana Besok
   // Jumlah
   jumlah_rencana2025: number; // total rencana
-  jumlah_realSd0710: number; // total real 5 hari terakhir
+  jumlah_realSd0710: number; // total realisasi untuk periode
   jumlah_pct: number;
 };
 
@@ -86,6 +87,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     jenis,
     dateFrom,
     dateTo,
+    year,
   } = filters;
 
   // Cast sekali di awal supaya bisa pakai field meta opsional
@@ -136,6 +138,23 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     ).sort();
   }, [rowsEx, distrik, kebun]);
 
+  // Tahun dari data (YYYY)
+  const yearOptions = useMemo(() => {
+    const years = Array.from(
+      new Set(
+        rowsEx
+          .map((r) => r.tanggal?.slice(0, 4))
+          .filter((v): v is string => !!v)
+      )
+    ).sort();
+    return years;
+  }, [rowsEx]);
+
+  const defaultYear = useMemo(
+    () => (yearOptions.length ? yearOptions[yearOptions.length - 1] : ""),
+    [yearOptions]
+  );
+
   // ================= FILTERED ROWS =================
 
   const filtered = useMemo(() => {
@@ -161,33 +180,46 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
         jenis === "all"
           ? true
           : (() => {
-            const j = jenis.toUpperCase();
-            const jumlahPerJenis: Record<string, number> = {
-              "NPK 13.6.27.4": (r.real_npk ?? 0) + (r.rencana_npk ?? 0),
-              "NPK 12.12.17.2": (r.real_npk ?? 0) + (r.rencana_npk ?? 0),
-              UREA: (r.real_urea ?? 0) + (r.rencana_urea ?? 0),
-              TSP: (r.real_tsp ?? 0) + (r.rencana_tsp ?? 0),
-              MOP: (r.real_mop ?? 0) + (r.rencana_mop ?? 0),
-              RP: (r.real_rp ?? 0) + (r.rencana_rp ?? 0),
-              DOLOMITE:
-                (r.real_dolomite ?? 0) + (r.rencana_dolomite ?? 0),
-              BORATE: (r.real_borate ?? 0) + (r.rencana_borate ?? 0),
-              CUSO4: (r.real_cuso4 ?? 0) + (r.rencana_cuso4 ?? 0),
-              ZNSO4: (r.real_znso4 ?? 0) + (r.rencana_znso4 ?? 0),
-            };
-            const totalJenis = jumlahPerJenis[j] ?? 0;
-            return totalJenis > 0;
-          })();
+              const j = jenis.toUpperCase();
+              const jumlahPerJenis: Record<string, number> = {
+                "NPK 13.6.27.4": (r.real_npk ?? 0) + (r.rencana_npk ?? 0),
+                "NPK 12.12.17.2": (r.real_npk ?? 0) + (r.rencana_npk ?? 0),
+                UREA: (r.real_urea ?? 0) + (r.rencana_urea ?? 0),
+                TSP: (r.real_tsp ?? 0) + (r.rencana_tsp ?? 0),
+                MOP: (r.real_mop ?? 0) + (r.rencana_mop ?? 0),
+                RP: (r.real_rp ?? 0) + (r.rencana_rp ?? 0),
+                DOLOMITE:
+                  (r.real_dolomite ?? 0) + (r.rencana_dolomite ?? 0),
+                BORATE: (r.real_borate ?? 0) + (r.rencana_borate ?? 0),
+                CUSO4: (r.real_cuso4 ?? 0) + (r.rencana_cuso4 ?? 0),
+                ZNSO4: (r.real_znso4 ?? 0) + (r.rencana_znso4 ?? 0),
+              };
+              const totalJenis = jumlahPerJenis[j] ?? 0;
+              return totalJenis > 0;
+            })();
 
-      const passDate =
-        (!dateFrom && !dateTo) ||
-        (() => {
-          if (!r.tanggal) return false;
-          const t = r.tanggal; // asumsi "YYYY-MM-DD"
+      const passDate = (() => {
+        if (!r.tanggal) {
+          // kalau user pakai filter tahun / tanggal, baris tanpa tanggal di-skip
+          if (dateFrom || dateTo || (year && year !== "all")) return false;
+          return true;
+        }
+
+        const t = r.tanggal; // "YYYY-MM-DD"
+
+        const hasDateRange = !!dateFrom || !!dateTo;
+        if (hasDateRange) {
           const geFrom = !dateFrom || t >= dateFrom;
           const leTo = !dateTo || t <= dateTo;
           return geFrom && leTo;
-        })();
+        }
+
+        if (year && year !== "all") {
+          return t.slice(0, 4) === year;
+        }
+
+        return true;
+      })();
 
       return (
         passDistrik &&
@@ -213,7 +245,40 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     jenis,
     dateFrom,
     dateTo,
+    year,
   ]);
+
+  // ================= PERIODE REALISASI (berdasarkan data TERFILTER) =================
+
+  // Hanya kalau user pilih dateFrom/dateTo kita batasi perhitungan realisasi.
+  const hasDateRange = !!dateFrom || !!dateTo;
+  const limitByPeriod = hasDateRange;
+
+  const { realStartISO, realEndISO } = useMemo(() => {
+    // ambil semua tanggal dari DATA YANG SUDAH TERFILTER (sudah kena distrik, kebun, tahun, dll.)
+    const dates = filtered
+      .map((r) => r.tanggal)
+      .filter((v): v is string => !!v)
+      .sort();
+
+    const today = todayISOJakarta();
+
+    if (!dates.length) {
+      // kalau tidak ada tanggal sama sekali → pakai hari ini
+      return { realStartISO: today, realEndISO: today };
+    }
+
+    let start = dates[0]; // tanggal paling kecil
+    let end = dates[dates.length - 1]; // tanggal paling besar
+
+    // Jika user pilih dateFrom/dateTo, override pakai range yang diminta
+    if (hasDateRange) {
+      if (dateFrom) start = dateFrom;
+      if (dateTo) end = dateTo;
+    }
+
+    return { realStartISO: start, realEndISO: end };
+  }, [filtered, hasDateRange, dateFrom, dateTo]);
 
   // ================= KPI =================
 
@@ -453,30 +518,23 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
 
   // ==================== TANGGAL UNTUK TABEL TM/TBM/TM&TBM ====================
 
-  const todayISO = todayISOJakarta();              // contoh: 2025-11-16
-  const tomorrowISO = addDaysJakarta(todayISO, 1); // 2025-11-17
-  const last5StartISO = addDaysJakarta(todayISO, -4); // 2025-11-12
-  const last5EndISO = todayISO;                       // 2025-11-16
+  const todayISO = todayISOJakarta();
+  const tomorrowISO = addDaysJakarta(todayISO, 1);
 
-  // =============== DEBUG: CEK BARIS YANG MASUK 5 HARI TERAKHIR ===============
-  if (process.env.NODE_ENV !== "production") {
+  // =============== DEBUG: hanya kalau limitByPeriod = true ==============
+
+  if (process.env.NODE_ENV !== "production" && limitByPeriod) {
     const debugRows = filtered.filter(
       (r) =>
         r.tanggal &&
-        r.tanggal >= last5StartISO &&
-        r.tanggal <= last5EndISO &&
-        (
-          (r.tm_realisasi ?? 0) > 0 ||
-          (r.tbm_realisasi ?? 0) > 0 ||
-          (r.realisasi_total ?? 0) > 0
-        )
+        (!realStartISO || r.tanggal >= realStartISO) &&
+        (!realEndISO || r.tanggal <= realEndISO)
     );
 
     if (debugRows.length > 0) {
-      // Kalau di FertRow kamu ada kolom real_app1/2/3, tambahkan juga di sini
       console.groupCollapsed(
-        "[Pemupukan] DEBUG Real 5 Hari Terakhir",
-        `window: ${last5StartISO} s.d. ${last5EndISO}`
+        "[Pemupukan] DEBUG Realisasi Periode",
+        `window: ${realStartISO} s.d. ${realEndISO}`
       );
       console.table(
         debugRows.map((r) => ({
@@ -485,21 +543,16 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
           tm_realisasi: r.tm_realisasi ?? 0,
           tbm_realisasi: r.tbm_realisasi ?? 0,
           real_total: r.realisasi_total ?? 0,
-          // sesuaikan nama kolom aplikasi kalau ada
-          // real_app1: (r as any).real_app1 ?? 0,
-          // real_app2: (r as any).real_app2 ?? 0,
-          // real_app3: (r as any).real_app3 ?? 0,
         }))
       );
       console.groupEnd();
     } else {
       console.info(
-        "[Pemupukan] DEBUG Real 5 Hari Terakhir: tidak ada baris dengan realisasi > 0",
-        `window: ${last5StartISO} s.d. ${last5EndISO}`
+        "[Pemupukan] DEBUG Realisasi Periode: tidak ada baris dalam window ini",
+        `window: ${realStartISO} s.d. ${realEndISO}`
       );
     }
   }
-  // 2025-11-16
 
   // ==================== TABEL TM/TBM/TM&TBM ====================
 
@@ -514,7 +567,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     real_today: number;
     rencana_tomorrow: number;
     jumlah_rencana_total: number;
-    real_last5_total: number;
+    real_last5_total: number; // total realisasi (per periode / semua)
   };
 
   type Apps = {
@@ -573,20 +626,30 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
 
         g.jumlah_rencana_total += renBase;
 
-        // Real 5 hari terakhir: hanya kalau tanggal masuk window
-        if (
-          r.tanggal &&
-          r.tanggal >= last5StartISO &&
-          r.tanggal <= last5EndISO
-        ) {
+        const apps: Apps = r as unknown as Apps;
+
+        // Realisasi periode:
+        // - kalau user pilih dateFrom/dateTo → batasi realStartISO–realEndISO
+        // - kalau tidak, ambil semua realisasi (jumlah seluruh tabel terfilter)
+        if (limitByPeriod) {
+          if (
+            r.tanggal &&
+            (!realStartISO || r.tanggal >= realStartISO) &&
+            (!realEndISO || r.tanggal <= realEndISO)
+          ) {
+            g.real_last5_total += realBase;
+            g.app1_real += apps.real_app1 ?? 0;
+            g.app2_real += apps.real_app2 ?? 0;
+            g.app3_real += apps.real_app3 ?? 0;
+          }
+        } else {
           g.real_last5_total += realBase;
-          const apps: Apps = r as unknown as Apps;
           g.app1_real += apps.real_app1 ?? 0;
           g.app2_real += apps.real_app2 ?? 0;
           g.app3_real += apps.real_app3 ?? 0;
         }
 
-        // Harian (hari ini & besok)
+        // Harian (hari ini & besok) tetap pakai tanggal hari ini / besok
         if (r.tanggal === todayISO) {
           g.rencana_today += renBase;
           g.real_today += realBase;
@@ -596,7 +659,6 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
         }
 
         // Rencana per aplikasi
-        const apps: Apps = r as unknown as Apps;
         g.app1_rencana += apps.rencana_app1 ?? 0;
         g.app2_rencana += apps.rencana_app2 ?? 0;
         g.app3_rencana += apps.rencana_app3 ?? 0;
@@ -622,9 +684,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
           g.app3_rencana = a3;
         }
 
-        // REAL per aplikasi TIDAK dibagi otomatis.
-        // Jadi kalau belum ada data real_app1/2/3 di window 5 hari,
-        // kolom Real 5 Hari Terakhir per aplikasi akan tetap 0.
+        // REAL per aplikasi sudah diisi di atas (tidak dibagi otomatis).
       });
 
       const pct = (real: number, ren: number) =>
@@ -667,7 +727,7 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
         };
       });
     },
-    [filtered, todayISO, tomorrowISO, last5StartISO, last5EndISO]
+    [filtered, todayISO, tomorrowISO, realStartISO, realEndISO, limitByPeriod]
   );
 
   const tmRows = useMemo(() => buildRows("TM"), [buildRows]);
@@ -682,6 +742,8 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     afdOptions,
     ttOptions,
     blokOptions,
+    yearOptions,
+    defaultYear,
     filtered,
     // KPIs
     totalRencana,
@@ -710,8 +772,8 @@ export function usePemupukanDerived(rows: FertRow[], filters: Filters) {
     tbmRows,
     tmTbmRows,
     headerDates: { selasa: todayISO, rabu: tomorrowISO },
-    realCutoffDate: todayISO,
-    realWindow: { start: last5StartISO, end: last5EndISO },
+    realCutoffDate: realEndISO,
+    realWindow: { start: realStartISO, end: realEndISO },
     ORDER_DTM,
     ORDER_DBR,
   };

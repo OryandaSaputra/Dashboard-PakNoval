@@ -8,7 +8,11 @@ import React, {
   useState,
 } from "react";
 import { FertRow } from "./types";
-import { usePemupukanDerived, TmTableRow, Kategori } from "./derive";
+import {
+  usePemupukanDerived,
+  TmTableRow,
+  Kategori,
+} from "./derive";
 
 type Ctx = {
   // data
@@ -36,6 +40,11 @@ type Ctx = {
   setDateFrom: (v: string) => void;
   dateTo: string;
   setDateTo: (v: string) => void;
+
+  // NEW: filter tahun
+  year: string; // "all" | "2024" | "2025" | ...
+  setYear: (v: string) => void;
+
   resetFilter: () => void;
 
   // ui
@@ -58,6 +67,10 @@ type Ctx = {
   afdOptions: string[];
   ttOptions: string[];
   blokOptions: string[];
+
+  // NEW: pilihan tahun dari data
+  yearOptions: string[];
+  defaultYear: string;
 
   // derived
   filtered: FertRow[];
@@ -111,8 +124,13 @@ type Ctx = {
   tbmRows: TmTableRow[];
   tmTbmRows: TmTableRow[];
 
-  // tanggal header
-  headerDates?: { today?: string; tomorrow?: string; selasa?: string; rabu?: string };
+  // tanggal header + periode realisasi
+  headerDates?: {
+    today?: string;
+    tomorrow?: string;
+    selasa?: string;
+    rabu?: string;
+  };
   realWindow?: { start?: string; end?: string };
   realCutoffDate?: string;
 };
@@ -141,6 +159,9 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
   const [jenis, setJenis] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  // NEW: filter tahun (default "all", artinya pakai semua tahun)
+  const [year, setYear] = useState<string>("all");
 
   const jenisOptions = useMemo(
     () => [
@@ -186,6 +207,7 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     jenis,
     dateFrom,
     dateTo,
+    year, // <-- WAJIB: dikirim ke derive.ts
   });
 
   const resetFilter = () => {
@@ -199,6 +221,7 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     setJenis("all");
     setDateFrom("");
     setDateTo("");
+    setYear("all"); // reset tahun juga
   };
 
   const value: Ctx = {
@@ -226,6 +249,8 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     setDateFrom,
     dateTo,
     setDateTo,
+    year,
+    setYear,
     resetFilter,
 
     // ui
@@ -248,6 +273,8 @@ export function PemupukanProvider({ children }: { children: React.ReactNode }) {
     afdOptions: derived.afdOptions,
     ttOptions: derived.ttOptions,
     blokOptions: derived.blokOptions,
+    yearOptions: derived.yearOptions,
+    defaultYear: derived.defaultYear,
 
     // derived
     filtered: derived.filtered,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Filter as FilterIcon, RefreshCcw, Loader2 } from "lucide-react";
+import { Filter as FilterIcon, RefreshCcw } from "lucide-react";
 import { KEBUN_LABEL } from "../constants";
 import type { Kategori } from "../derive";
 
@@ -19,7 +20,6 @@ type Props = {
   open: boolean;
   onClose: () => void;
 
-  // filter state (dikontrol di parent)
   distrik: string;
   setDistrik: (v: string) => void;
 
@@ -38,9 +38,13 @@ type Props = {
   blok: string;
   setBlok: (v: string) => void;
 
+  year: string;
+  setYear: (v: string) => void;
+  yearOptions?: string[];
+
   jenis: string;
   setJenis: (v: string) => void;
-  jenisOptions: string[];
+  jenisOptions?: string[];
 
   dateFrom: string;
   setDateFrom: (v: string) => void;
@@ -51,24 +55,23 @@ type Props = {
   search: string;
   setSearch: (v: string) => void;
 
-  distrikOptions: string[];
-  kebunOptions: string[];
-  kategoriOptions: (Kategori | "all")[];
-  afdOptions: string[];
-  ttOptions: string[];
-  blokOptions: string[];
+  distrikOptions?: string[];
+  kebunOptions?: string[];
+  kategoriOptions?: (Kategori | "all")[];
+  afdOptions?: string[];
+  ttOptions?: string[];
+  blokOptions?: string[];
 
   resetFilter: () => void;
 
-  /** dipanggil saat tombol "Terapkan Filter" di-klik.
-   *  Parent akan gunakan nilai filter saat ini untuk fetch data dari DB. */
+  /** Masih ada di props untuk kompatibilitas, tapi tidak dipakai lagi */
   onApply: () => void;
-
-  /** status loading saat proses ambil data dari DB */
-  isApplying?: boolean;
 };
 
 export default function FilterPanel(props: Props) {
+  // ✅ Hooks HARUS di-atas, sebelum kondisi apa pun
+  const router = useRouter();
+
   const {
     open,
     onClose,
@@ -84,6 +87,9 @@ export default function FilterPanel(props: Props) {
     setTt,
     blok,
     setBlok,
+    year,
+    setYear,
+    yearOptions,
     jenis,
     setJenis,
     jenisOptions,
@@ -100,43 +106,71 @@ export default function FilterPanel(props: Props) {
     ttOptions,
     blokOptions,
     resetFilter,
-    onApply,
-    isApplying = false,
+    // onApply, // ⛔ tidak dipakai lagi
   } = props;
 
   if (!open) return null;
 
+  /* ===================== APPLY / RESET ===================== */
+
+  const applyFilter = () => {
+    const newParams = new URLSearchParams();
+
+    if (dateFrom) newParams.set("dateFrom", dateFrom);
+    if (dateTo) newParams.set("dateTo", dateTo);
+
+    router.push(`?${newParams.toString()}`);
+    onClose();
+  };
+
+  const handleReset = () => {
+    setDateFrom("");
+    setDateTo("");
+
+    router.push("?");
+    resetFilter();
+  };
+
+  /* ===================== fallback options ===================== */
+
+  const safeDistrikOptions = distrikOptions ?? [];
+  const safeKebunOptions = kebunOptions ?? [];
+  const safeKategoriOptions = kategoriOptions ?? ["all", "TM", "TBM", "BIBITAN"];
+  const safeAfdOptions = afdOptions ?? [];
+  const safeTtOptions = ttOptions ?? [];
+  const safeBlokOptions = blokOptions ?? [];
+  const safeYearOptions = yearOptions ?? [];
+  const safeJenisOptions = jenisOptions ?? ["all"];
+
+  /* ===================== UI ===================== */
+
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
       <div className="absolute right-0 top-0 h-full w-full max-w-xl bg-white dark:bg-slate-900 shadow-xl p-6 overflow-y-auto">
+        {/* HEADER */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold flex items-center gap-2">
             <FilterIcon className="h-5 w-5" /> Filter
           </h2>
 
           <div className="flex gap-2">
-            {/* Reset filter ke default (parent boleh sekalian refetch data default) */}
             <Button
               variant="outline"
-              onClick={resetFilter}
+              onClick={handleReset}
               className="gap-2 h-8 px-3"
               type="button"
             >
               <RefreshCcw className="h-4 w-4" /> Reset
             </Button>
 
-            {/* Terapkan filter -> parent fetch ke DB */}
             <Button
-              onClick={onApply}
-              className="gap-2 h-8 px-3"
+              onClick={applyFilter}
+              className="gap-2 h-8 px-3 bg-green-600 hover:bg-green-700 text-white"
               type="button"
-              disabled={isApplying}
             >
-              {isApplying && (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
-              {isApplying ? "Memuat..." : "Terapkan"}
+              Terapkan
             </Button>
 
             <Button
@@ -150,6 +184,7 @@ export default function FilterPanel(props: Props) {
           </div>
         </div>
 
+        {/* FORM */}
         <Card className="bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800">
           <CardContent className="pt-4">
             <div className="grid md:grid-cols-6 gap-3">
@@ -158,16 +193,13 @@ export default function FilterPanel(props: Props) {
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Distrik
                 </label>
-                <Select
-                  value={distrik}
-                  onValueChange={(v) => setDistrik(v)}
-                >
+                <Select value={distrik} onValueChange={setDistrik}>
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih Distrik" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua</SelectItem>
-                    {distrikOptions.map((d) => (
+                    {safeDistrikOptions.map((d) => (
                       <SelectItem key={d} value={d}>
                         {d}
                       </SelectItem>
@@ -181,13 +213,13 @@ export default function FilterPanel(props: Props) {
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Kebun
                 </label>
-                <Select value={kebun} onValueChange={(v) => setKebun(v)}>
+                <Select value={kebun} onValueChange={setKebun}>
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih Kebun" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua</SelectItem>
-                    {kebunOptions.map((k) => (
+                    {safeKebunOptions.map((k) => (
                       <SelectItem key={k} value={k}>
                         {KEBUN_LABEL[k] ?? k}
                       </SelectItem>
@@ -196,22 +228,20 @@ export default function FilterPanel(props: Props) {
                 </Select>
               </div>
 
-              {/* Kategori Tanaman */}
+              {/* Kategori */}
               <div className="md:col-span-3">
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Kategori Tanaman
                 </label>
                 <Select
                   value={kategori}
-                  onValueChange={(v) =>
-                    setKategori(v as Kategori | "all")
-                  }
+                  onValueChange={(v) => setKategori(v as Kategori | "all")}
                 >
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih Kategori" />
                   </SelectTrigger>
                   <SelectContent>
-                    {kategoriOptions.map((k) => (
+                    {safeKategoriOptions.map((k) => (
                       <SelectItem key={k} value={k}>
                         {k === "all"
                           ? "Semua"
@@ -226,21 +256,38 @@ export default function FilterPanel(props: Props) {
                 </Select>
               </div>
 
+              {/* Tahun */}
+              <div className="md:col-span-3">
+                <label className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Tahun Data
+                </label>
+                <Select value={year} onValueChange={setYear}>
+                  <SelectTrigger className="w-full h-9">
+                    <SelectValue placeholder="Pilih Tahun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    {safeYearOptions.map((y) => (
+                      <SelectItem key={y} value={y}>
+                        {y}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* AFD */}
               <div className="md:col-span-3">
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Afdeling (AFD)
                 </label>
-                <Select
-                  value={afd}
-                  onValueChange={(v) => setAfd(v)}
-                >
+                <Select value={afd} onValueChange={setAfd}>
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih AFD" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua</SelectItem>
-                    {afdOptions.map((a) => (
+                    {safeAfdOptions.map((a) => (
                       <SelectItem key={a} value={a}>
                         {a}
                       </SelectItem>
@@ -249,21 +296,18 @@ export default function FilterPanel(props: Props) {
                 </Select>
               </div>
 
-              {/* Tahun Tanam */}
+              {/* TT */}
               <div className="md:col-span-3">
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Tahun Tanam (TT)
                 </label>
-                <Select
-                  value={tt}
-                  onValueChange={(v) => setTt(v)}
-                >
+                <Select value={tt} onValueChange={setTt}>
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih Tahun Tanam" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua</SelectItem>
-                    {ttOptions.map((t) => (
+                    {safeTtOptions.map((t) => (
                       <SelectItem key={t} value={t}>
                         {t}
                       </SelectItem>
@@ -277,16 +321,13 @@ export default function FilterPanel(props: Props) {
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Blok
                 </label>
-                <Select
-                  value={blok}
-                  onValueChange={(v) => setBlok(v)}
-                >
+                <Select value={blok} onValueChange={setBlok}>
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih Blok" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua</SelectItem>
-                    {blokOptions.map((b) => (
+                    {safeBlokOptions.map((b) => (
                       <SelectItem key={b} value={b}>
                         {b}
                       </SelectItem>
@@ -300,15 +341,12 @@ export default function FilterPanel(props: Props) {
                 <label className="text-[11px] text-slate-500 dark:text-slate-400">
                   Jenis Pupuk
                 </label>
-                <Select
-                  value={jenis}
-                  onValueChange={(v) => setJenis(v)}
-                >
+                <Select value={jenis} onValueChange={setJenis}>
                   <SelectTrigger className="w-full h-9">
                     <SelectValue placeholder="Pilih Jenis Pupuk" />
                   </SelectTrigger>
                   <SelectContent>
-                    {jenisOptions.map((j) => (
+                    {safeJenisOptions.map((j) => (
                       <SelectItem key={j} value={j}>
                         {j === "all" ? "Semua" : j.toUpperCase()}
                       </SelectItem>
@@ -357,7 +395,7 @@ export default function FilterPanel(props: Props) {
               </div>
             </div>
 
-            {/* Badge filter aktif */}
+            {/* BADGE FILTER AKTIF */}
             <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
               {distrik !== "all" && (
                 <Badge variant="secondary">Distrik: {distrik}</Badge>
@@ -370,12 +408,11 @@ export default function FilterPanel(props: Props) {
               {kategori !== "all" && (
                 <Badge variant="secondary">Kategori: {kategori}</Badge>
               )}
-              {afd !== "all" && (
-                <Badge variant="secondary">AFD: {afd}</Badge>
+              {year !== "all" && (
+                <Badge variant="secondary">Tahun: {year}</Badge>
               )}
-              {tt !== "all" && (
-                <Badge variant="secondary">TT: {tt}</Badge>
-              )}
+              {afd !== "all" && <Badge variant="secondary">AFD: {afd}</Badge>}
+              {tt !== "all" && <Badge variant="secondary">TT: {tt}</Badge>}
               {blok !== "all" && (
                 <Badge variant="secondary">Blok: {blok}</Badge>
               )}
@@ -399,6 +436,7 @@ export default function FilterPanel(props: Props) {
                 tt === "all" &&
                 blok === "all" &&
                 jenis === "all" &&
+                year === "all" &&
                 !dateFrom &&
                 !dateTo &&
                 !search && (
