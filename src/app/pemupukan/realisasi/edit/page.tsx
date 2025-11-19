@@ -1,6 +1,6 @@
 "use client";
-import RealisasiEdit from "@/app/pemupukan/sections/RealisasiEdit";
+import RencanaEdit from "@/app/pemupukan/sections/RencanaEdit";
 
 export default function Page() {
-  return <RealisasiEdit />;
+  return <RencanaEdit />;
 }
