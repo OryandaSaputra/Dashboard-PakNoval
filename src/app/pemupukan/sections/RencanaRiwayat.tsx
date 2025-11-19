@@ -55,6 +55,22 @@ type HistoryRow = {
   kgPupuk: number | null;
 };
 
+const TABLE_HEADERS = [
+  "Tanggal",
+  "Kategori",
+  "Kebun",
+  "Kode Kebun",
+  "AFD",
+  "TT",
+  "Blok",
+  "Luas (Ha)",
+  "INV",
+  "Jenis Pupuk",
+  "Aplikasi",
+  "Dosis (Kg/pokok)",
+  "Kg Pupuk",
+] as const;
+
 function parseDateValue(s: string): number {
   if (!s || s === "-") return 0;
   const t = new Date(s).getTime();
@@ -78,6 +94,15 @@ function toLocalYmd(value: string | null): string {
   return `${y}-${m}-${day}`;
 }
 
+// 🔧 Helper: nama sheet Excel aman
+function makeSheetName(raw: string): string {
+  const invalid = /[\\/?*[\]:]/g;
+  let name = raw.replace(invalid, " ");
+  if (!name.trim()) name = "Sheet";
+  if (name.length > 31) name = name.slice(0, 31);
+  return name;
+}
+
 export default function RencanaRiwayat() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +111,8 @@ export default function RencanaRiwayat() {
   const pageSize = 100;
   const router = useRouter();
 
-  // kebun yang dipilih untuk dihapus (per kebun)
-  const [deleteKebun, setDeleteKebun] = useState("");
+  // kebun yang dipilih (dipakai untuk hapus & export per kebun)
+  const [selectedKebun, setSelectedKebun] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -137,19 +162,19 @@ export default function RencanaRiwayat() {
     const term = q.trim().toLowerCase();
     const base = term
       ? rows.filter((r) => {
-        const keb = KEBUN_LABEL[r.kebun] ?? r.kebun ?? "";
-        return [
-          r.kategori,
-          keb,
-          r.kodeKebun ?? "",
-          r.afd ?? "",
-          r.blok ?? "",
-          r.jenisPupuk ?? "",
-          r.tanggal ?? "",
-        ]
-          .map((v) => String(v).toLowerCase())
-          .some((v) => v.includes(term));
-      })
+          const keb = KEBUN_LABEL[r.kebun] ?? r.kebun ?? "";
+          return [
+            r.kategori,
+            keb,
+            r.kodeKebun ?? "",
+            r.afd ?? "",
+            r.blok ?? "",
+            r.jenisPupuk ?? "",
+            r.tanggal ?? "",
+          ]
+            .map((v) => String(v).toLowerCase())
+            .some((v) => v.includes(term));
+        })
       : rows;
 
     return [...base].sort(
@@ -164,13 +189,30 @@ export default function RencanaRiwayat() {
     setPage(1);
   }, [q]);
 
-  // daftar kebun unik (untuk Select hapus per kebun)
+  // daftar kebun unik (diambil dari database / rows)
   const kebunList = useMemo(() => {
     const set = new Set<string>();
     rows.forEach((r) => {
       if (r.kebun) set.add(r.kebun);
     });
     return Array.from(set).sort();
+  }, [rows]);
+
+  // group per kebun (untuk export all multi-sheet / multi-page)
+  const groupedByKebun = useMemo(() => {
+    const map: Record<string, HistoryRow[]> = {};
+    rows.forEach((r) => {
+      if (!map[r.kebun]) map[r.kebun] = [];
+      map[r.kebun].push(r);
+    });
+
+    Object.values(map).forEach((list) => {
+      list.sort(
+        (a, b) => parseDateValue(a.tanggal) - parseDateValue(b.tanggal)
+      );
+    });
+
+    return map;
   }, [rows]);
 
   // === ACTION: HAPUS SATU DATA ===
@@ -275,7 +317,7 @@ export default function RencanaRiwayat() {
       setRows([]);
       setPage(1);
       setQ("");
-      setDeleteKebun("");
+      setSelectedKebun("");
 
       await Swal.fire({
         title: "Berhasil",
@@ -296,7 +338,7 @@ export default function RencanaRiwayat() {
 
   // === ACTION: HAPUS BERDASARKAN KEBUN ===
   const handleDeleteByKebun = async () => {
-    if (!deleteKebun) {
+    if (!selectedKebun) {
       await Swal.fire({
         title: "Belum memilih kebun",
         text: "Silakan pilih kebun yang ingin dihapus datanya.",
@@ -306,8 +348,8 @@ export default function RencanaRiwayat() {
       return;
     }
 
-    const label = KEBUN_LABEL[deleteKebun] ?? deleteKebun;
-    const affected = rows.filter((r) => r.kebun === deleteKebun).length;
+    const label = KEBUN_LABEL[selectedKebun] ?? selectedKebun;
+    const affected = rows.filter((r) => r.kebun === selectedKebun).length;
 
     if (affected === 0) {
       await Swal.fire({
@@ -323,7 +365,7 @@ export default function RencanaRiwayat() {
       title: "Hapus data per kebun?",
       html: `
         <div style="text-align:left;font-size:12px">
-          Kebun: <b>${label}</b> (${deleteKebun})<br/>
+          Kebun: <b>${label}</b> (${selectedKebun})<br/>
           Jumlah baris data: <b>${affected}</b><br/><br/>
           Tindakan ini akan menghapus semua data rencana untuk kebun tersebut.<br/>
           Data yang sudah dihapus <b>tidak dapat dikembalikan</b>.
@@ -340,7 +382,7 @@ export default function RencanaRiwayat() {
 
     try {
       const res = await fetch(
-        `/api/pemupukan/rencana?kebun=${encodeURIComponent(deleteKebun)}`,
+        `/api/pemupukan/rencana?kebun=${encodeURIComponent(selectedKebun)}`,
         {
           method: "DELETE",
         }
@@ -361,8 +403,8 @@ export default function RencanaRiwayat() {
       }
 
       // hapus dari state
-      setRows((prev) => prev.filter((r) => r.kebun !== deleteKebun));
-      setDeleteKebun("");
+      setRows((prev) => prev.filter((r) => r.kebun !== selectedKebun));
+      setSelectedKebun("");
 
       await Swal.fire({
         title: "Berhasil",
@@ -387,6 +429,235 @@ export default function RencanaRiwayat() {
     router.push(`/pemupukan/rencana/edit?id=${row.id}`);
   };
 
+  // === EXPORT: Excel (Semua Kebun, multi-sheet) ===
+  const handleExportExcelAll = async () => {
+    if (rows.length === 0) {
+      await Swal.fire({
+        title: "Tidak ada data",
+        text: "Tidak ada data rencana untuk diexport.",
+        icon: "info",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+
+    Object.entries(groupedByKebun).forEach(([kebunCode, kebunRows]) => {
+      if (kebunRows.length === 0) return;
+
+      const kebunLabel = KEBUN_LABEL[kebunCode] ?? kebunCode;
+      const sheetName = makeSheetName(kebunLabel);
+
+      const sheetData = [
+        [...TABLE_HEADERS],
+        ...kebunRows.map((r) => [
+          r.tanggal,
+          r.kategori,
+          KEBUN_LABEL[r.kebun] ?? r.kebun,
+          r.kodeKebun,
+          r.afd,
+          r.tt,
+          r.blok,
+          r.luas ?? "",
+          r.inv ?? "",
+          r.jenisPupuk,
+          r.aplikasi ?? "",
+          r.dosis ?? "",
+          r.kgPupuk ?? "",
+        ]),
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(workbook, ws, sheetName);
+    });
+
+    XLSX.writeFile(workbook, "Rencana_Pemupukan_Semua_Kebun.xlsx");
+  };
+
+  // === EXPORT: Excel (Per Kebun) ===
+  const handleExportExcelByKebun = async () => {
+    if (!selectedKebun) {
+      await Swal.fire({
+        title: "Kebun belum dipilih",
+        text: "Silakan pilih kebun terlebih dahulu.",
+        icon: "warning",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const kebunRows = rows.filter((r) => r.kebun === selectedKebun);
+    if (kebunRows.length === 0) {
+      await Swal.fire({
+        title: "Tidak ada data",
+        text: "Tidak ada data rencana untuk kebun yang dipilih.",
+        icon: "info",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+
+    const kebunLabel = KEBUN_LABEL[selectedKebun] ?? selectedKebun;
+    const sheetName = makeSheetName(kebunLabel);
+
+    const sheetData = [
+      [...TABLE_HEADERS],
+      ...kebunRows.map((r) => [
+        r.tanggal,
+        r.kategori,
+        KEBUN_LABEL[r.kebun] ?? r.kebun,
+        r.kodeKebun,
+        r.afd,
+        r.tt,
+        r.blok,
+        r.luas ?? "",
+        r.inv ?? "",
+        r.jenisPupuk,
+        r.aplikasi ?? "",
+        r.dosis ?? "",
+        r.kgPupuk ?? "",
+      ]),
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    XLSX.utils.book_append_sheet(workbook, ws, sheetName);
+
+    const fileName = `Rencana_Pemupukan_${selectedKebun}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
+  // === EXPORT: PDF (Semua Kebun, per kebun 1 halaman) ===
+  const handleExportPdfAll = async () => {
+    if (rows.length === 0) {
+      await Swal.fire({
+        title: "Tidak ada data",
+        text: "Tidak ada data rencana untuk diexport.",
+        icon: "info",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const jsPDFmod = await import("jspdf");
+    const autoTable = (await import("jspdf-autotable")).default;
+    const doc = new jsPDFmod.jsPDF({ orientation: "landscape" });
+
+    const kebunEntries = Object.entries(groupedByKebun).filter(
+      ([, kebunRows]) => kebunRows.length > 0
+    );
+
+    kebunEntries.forEach(([kebunCode, kebunRows], idx) => {
+      if (idx > 0) {
+        doc.addPage("landscape");
+      }
+
+      const kebunLabel = KEBUN_LABEL[kebunCode] ?? kebunCode;
+      doc.setFontSize(10);
+      doc.text(
+        `Rencana Pemupukan - Kebun ${kebunLabel} (${kebunCode})`,
+        14,
+        12
+      );
+
+      const body = kebunRows.map((r) => [
+        r.tanggal,
+        r.kategori,
+        KEBUN_LABEL[r.kebun] ?? r.kebun,
+        r.kodeKebun,
+        r.afd,
+        r.tt,
+        r.blok,
+        fmtNum(r.luas),
+        fmtNum(r.inv),
+        r.jenisPupuk,
+        fmtNum(r.aplikasi),
+        fmtNum(r.dosis),
+        fmtNum(r.kgPupuk),
+      ]);
+
+      autoTable(doc, {
+        startY: 16,
+        head: [TABLE_HEADERS as unknown as string[]],
+        body,
+        styles: { fontSize: 6 },
+        headStyles: { fillColor: [226, 232, 240] },
+        margin: { left: 10, right: 10 },
+      });
+    });
+
+    doc.save("Rencana_Pemupukan_Semua_Kebun.pdf");
+  };
+
+  // === EXPORT: PDF (Per Kebun) ===
+  const handleExportPdfByKebun = async () => {
+    if (!selectedKebun) {
+      await Swal.fire({
+        title: "Kebun belum dipilih",
+        text: "Silakan pilih kebun terlebih dahulu.",
+        icon: "warning",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const kebunRows = rows.filter((r) => r.kebun === selectedKebun);
+    if (kebunRows.length === 0) {
+      await Swal.fire({
+        title: "Tidak ada data",
+        text: "Tidak ada data rencana untuk kebun yang dipilih.",
+        icon: "info",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+
+    const jsPDFmod = await import("jspdf");
+    const autoTable = (await import("jspdf-autotable")).default;
+    const doc = new jsPDFmod.jsPDF({ orientation: "landscape" });
+
+    const kebunLabel = KEBUN_LABEL[selectedKebun] ?? selectedKebun;
+
+    doc.setFontSize(10);
+    doc.text(
+      `Rencana Pemupukan - Kebun ${kebunLabel} (${selectedKebun})`,
+      14,
+      12
+    );
+
+    const body = kebunRows.map((r) => [
+      r.tanggal,
+      r.kategori,
+      KEBUN_LABEL[r.kebun] ?? r.kebun,
+      r.kodeKebun,
+      r.afd,
+      r.tt,
+      r.blok,
+      fmtNum(r.luas),
+      fmtNum(r.inv),
+      r.jenisPupuk,
+      fmtNum(r.aplikasi),
+      fmtNum(r.dosis),
+      fmtNum(r.kgPupuk),
+    ]);
+
+    autoTable(doc, {
+      startY: 16,
+      head: [TABLE_HEADERS as unknown as string[]],
+      body,
+      styles: { fontSize: 6 },
+      headStyles: { fillColor: [226, 232, 240] },
+      margin: { left: 10, right: 10 },
+    });
+
+    const fileName = `Rencana_Pemupukan_${selectedKebun}.pdf`;
+    doc.save(fileName);
+  };
+
   return (
     <section className="space-y-2">
       <SectionHeader
@@ -395,27 +666,90 @@ export default function RencanaRiwayat() {
       />
 
       <Card className="bg-white/80 dark:bg-slate-900/60">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[13px]">Pencarian &amp; Tabel</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2 items-center">
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Cari kategori (TM/TBM/BIBITAN) / kebun / AFD / blok / jenis pupuk / tanggal…"
-              className="h-9 max-w-xl"
-            />
+        {/* Header + action buttons */}
+        <CardHeader className="pb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-[13px]">
+              Pencarian, Aksi, & Export
+            </CardTitle>
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              Filter data, hapus, atau export riwayat rencana ke Excel/PDF.
+            </p>
+          </div>
 
-            <div className="ml-auto flex items-center gap-2">
-              {/* Pilih kebun yang akan dihapus */}
+          <div className="flex flex-wrap gap-2 justify-end">
+            {/* Export Excel */}
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={handleExportExcelAll}
+                disabled={loading || rows.length === 0}
+                className="px-3 py-1.5 rounded border border-emerald-300 text-[11px] text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                Export Excel (Semua Kebun)
+              </button>
+              <button
+                type="button"
+                onClick={handleExportExcelByKebun}
+                disabled={loading || !selectedKebun}
+                className="px-3 py-1.5 rounded border border-emerald-300 text-[11px] text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                Export Excel (Per Kebun)
+              </button>
+            </div>
+
+            {/* Export PDF */}
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={handleExportPdfAll}
+                disabled={loading || rows.length === 0}
+                className="px-3 py-1.5 rounded border border-sky-300 text-[11px] text-sky-800 hover:bg-sky-50 disabled:opacity-50"
+              >
+                Export PDF (Semua Kebun)
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPdfByKebun}
+                disabled={loading || !selectedKebun}
+                className="px-3 py-1.5 rounded border border-sky-300 text-[11px] text-sky-800 hover:bg-sky-50 disabled:opacity-50"
+              >
+                Export PDF (Per Kebun)
+              </button>
+            </div>
+
+            {/* Hapus semua data */}
+            <button
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={rows.length === 0 || loading}
+              className="px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Hapus Semua Data
+            </button>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          {/* Bar filter + pilih kebun */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <div className="flex-1">
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Cari kategori (TM/TBM/BIBITAN) / kebun / AFD / blok / jenis pupuk / tanggal…"
+                className="h-9"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
               <Select
-                value={deleteKebun}
-                onValueChange={(v) => setDeleteKebun(v)}
+                value={selectedKebun}
+                onValueChange={(v) => setSelectedKebun(v)}
                 disabled={kebunList.length === 0 || loading}
               >
                 <SelectTrigger className="h-9 w-[220px]">
-                  <SelectValue placeholder="Pilih kebun untuk dihapus" />
+                  <SelectValue placeholder="Pilih kebun" />
                 </SelectTrigger>
                 <SelectContent>
                   {kebunList.map((code) => (
@@ -429,26 +763,16 @@ export default function RencanaRiwayat() {
               <button
                 type="button"
                 onClick={handleDeleteByKebun}
-                disabled={
-                  !deleteKebun || loading || rows.length === 0
-                }
+                disabled={!selectedKebun || loading || rows.length === 0}
                 className="px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
               >
                 Hapus per Kebun
               </button>
-
-              <button
-                type="button"
-                onClick={handleDeleteAll}
-                disabled={rows.length === 0 || loading}
-                className="px-3 py-1.5 rounded border border-red-300 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50"
-              >
-                Hapus Semua Data
-              </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Tabel */}
+          <div className="overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-md">
             <table className="min-w-full text-xs">
               <thead className="bg-slate-100 dark:bg-slate-800/40">
                 <tr>
@@ -472,7 +796,7 @@ export default function RencanaRiwayat() {
                 {pageRows.map((r, i) => (
                   <tr
                     key={`${r.id}-${r.kebun}-${r.kodeKebun}-${r.tanggal}-${i}`}
-                    className="border-t border-slate-100 dark:border-slate-800"
+                    className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                   >
                     <td className="px-3 py-2">{r.tanggal}</td>
                     <td className="px-3 py-2">{r.kategori}</td>
@@ -504,7 +828,7 @@ export default function RencanaRiwayat() {
                         <button
                           type="button"
                           onClick={() => handleEdit(r)}
-                          className="px-2 py-1 rounded border border-slate-300 text-[11px] hover:bg-slate-100"
+                          className="px-2 py-1 rounded border border-slate-300 text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800"
                         >
                           Edit
                         </button>
@@ -546,7 +870,7 @@ export default function RencanaRiwayat() {
           </div>
 
           {/* Pagination sederhana */}
-          <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-slate-600 dark:text-slate-300">
             <span>
               Menampilkan{" "}
               {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}
@@ -554,7 +878,7 @@ export default function RencanaRiwayat() {
               {Math.min(page * pageSize, filtered.length)} dari{" "}
               {filtered.length}
             </span>
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-end">
               <button
                 disabled={page === 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}

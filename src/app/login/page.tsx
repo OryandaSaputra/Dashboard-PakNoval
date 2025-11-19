@@ -76,10 +76,11 @@ export default function LoginPage() {
                   <div className="relative h-10 w-10 rounded-2xl bg-white flex items-center justify-center shadow-lg shadow-emerald-900/60 overflow-hidden">
                     {/* Logo PTPN 4 */}
                     <Image
-                      src="/ptpn4-logo.png" // <- pastikan file ini ada di /public
+                      src="https://www.ptpn4.co.id/build/assets/Logo%20PTPN%20IV-CyWK9qsP.png"
                       alt="PTPN 4"
                       fill
-                      className="object-contain p-1.5"
+                      unoptimized
+                      className="object-contain p-1"
                     />
                   </div>
                   <span className="text-xs tracking-[0.25em] uppercase">
